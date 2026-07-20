@@ -1,8 +1,9 @@
-# foot-model — pipeline de données (M2)
+# foot-model — pipeline de données (M2) + backtest Dixon-Coles (M3)
 
 Pipeline Python qui télécharge, normalise et stocke en SQLite des données
-historiques de matchs (résultats, cotes de clôture, xG), prêt à alimenter
-un backtest walk-forward Dixon-Coles (M3).
+historiques de matchs (résultats, cotes de clôture, xG), et modèle
+Dixon-Coles (1997) from scratch évalué en walk-forward strict contre les
+cotes de clôture démargées.
 
 ## Sources
 
@@ -17,7 +18,7 @@ Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), saisons 2018-19 à 
 ## Installation
 
 ```bash
-pip install pandas requests
+pip install pandas requests numpy scipy
 ```
 
 ## Usage
@@ -46,10 +47,26 @@ Si `check.py` liste des matchs sans xG, ajouter les correspondances de noms
 manquantes dans `aliases.py` (nom Understat → nom football-data) puis relancer
 `python pipeline.py --update`.
 
+## Backtest M3 (Dixon-Coles vs marché)
+
+```bash
+python backtest.py --tune          # grid search de ξ sur 2020-21 + 2021-22, figé une fois pour toutes
+python backtest.py --run           # test 2022-23 → 2025-26 avec ξ figé -> table predictions
+python backtest.py --shuffle-test  # contrôle anti-fuite (scores permutés => Brier dégradé attendu)
+python report.py                   # métriques + calibration -> reports/m3_backtest.md
+```
+
+Protocole : refit hebdomadaire, fit uniquement sur les matchs antérieurs à la
+semaine prédite (garde anti-futur dans `model.fit`), burn-in 2018-19 + 2019-20,
+un modèle par ligue. Benchmark : cotes de clôture démargées (méthode power),
+baselines uniforme et fréquences historiques. Résultats dans
+[reports/m3_backtest.md](reports/m3_backtest.md).
+
 ## Tests
 
 ```bash
 python -m unittest discover tests
 ```
 
-Les tests utilisent des fixtures locales, aucun accès réseau.
+Les tests utilisent des fixtures locales et des données synthétiques,
+aucun accès réseau.

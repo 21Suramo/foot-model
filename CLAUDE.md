@@ -9,7 +9,13 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   Téléchargement football-data.co.uk + xG Understat (endpoint JSON
   `getLeagueData`, en-tête `X-Requested-With` requis), stockage SQLite,
   jointure xG par alias avec tolérance ±2 jours, validation `check.py` verte.
-- **M3 — backtest walk-forward Dixon-Coles : en cours.**
+- **M3 — backtest walk-forward Dixon-Coles : implémenté et exécuté.**
+  Modèle en Python pur (numpy/scipy), walk-forward hebdomadaire strict,
+  ξ = 0.002 figé sur validation 2020-21+2021-22, test 2022-23 → 2025-26.
+  Résultat honnête ([reports/m3_backtest.md](reports/m3_backtest.md)) :
+  3 critères sur 4 validés — bat nettement les baselines, calibration
+  saine, anti-fuite OK, mais Brier à **+2,47 %** du marché (critère < 2 %).
+  Le protocole interdit de re-régler ξ après lecture du test.
 
 ## Commandes
 
@@ -18,6 +24,8 @@ pip install pandas requests          # dépendances
 python pipeline.py --update          # tout mettre à jour (3 ligues x 8 saisons)
 python pipeline.py --update --league E0 --season 2324   # une ligue/saison
 python check.py                      # validation (code retour 0 si tout passe)
+python backtest.py --tune|--run|--shuffle-test   # backtest M3 (voir backtest.py)
+python report.py                     # rapport -> reports/m3_backtest.md
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -34,6 +42,13 @@ python -m unittest discover -s tests # tests unitaires
   d'alias, tolérance ±2 jours.
 - `aliases.py` — seed de `team_aliases` (nom Understat → nom football-data).
 - `pipeline.py` — CLI d'orchestration ; `check.py` — validation de la base.
+- `model.py` — Dixon-Coles : MLE pondérée (gradient analytique), shrinkage
+  ridge des équipes à faible historique, grille de scores 7×7 + probas 1N2.
+- `backtest.py` — protocole walk-forward : `--tune` (fige ξ dans
+  `data/xi_frozen.json`), `--run` (table `predictions`), `--shuffle-test`
+  (anti-fuite). Le fichier ξ figé ne doit jamais être régénéré après le test.
+- `report.py` — Brier/log-loss vs marché démargé power et baselines,
+  calibration, verdicts → `reports/m3_backtest.md`.
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2025-26.
 
