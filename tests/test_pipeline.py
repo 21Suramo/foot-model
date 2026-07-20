@@ -112,8 +112,8 @@ class TestXgJoin(unittest.TestCase):
         us = [
             {"date": "2023-08-11", "home": "Manchester United", "away": "Wolverhampton Wanderers",
              "xg_home": 1.5, "xg_away": 0.7},
-            # date décalée d'un jour côté Understat
-            {"date": "2023-08-13", "home": "Arsenal", "away": "Everton",
+            # date décalée de deux jours côté Understat (max toléré)
+            {"date": "2023-08-14", "home": "Arsenal", "away": "Everton",
              "xg_home": 2.1, "xg_away": 0.3},
             {"date": "2023-08-12", "home": "Inconnu FC", "away": "Everton",
              "xg_home": 1.0, "xg_away": 1.0},

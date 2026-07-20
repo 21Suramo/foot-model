@@ -10,7 +10,7 @@ un backtest walk-forward Dixon-Coles (M3).
   (clôture Pinnacle prioritaire, sinon moyenne du marché ; repli sur les cotes
   d'ouverture pour 2018-19, qui n'a pas de clôture — voir `odds_source`).
 - [Understat](https://understat.com/) — xG par match, jointes via la table
-  `team_aliases` avec tolérance ±1 jour sur la date.
+  `team_aliases` avec tolérance ±2 jours sur la date.
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), saisons 2018-19 à 2025-26.
 
