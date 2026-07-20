@@ -36,6 +36,20 @@ CREATE TABLE IF NOT EXISTS team_aliases (
     alias     TEXT PRIMARY KEY,
     canonical TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS predictions (
+    match_id  INTEGER PRIMARY KEY REFERENCES matches(match_id),
+    xi        REAL NOT NULL,
+    model_h   REAL NOT NULL,
+    model_d   REAL NOT NULL,
+    model_a   REAL NOT NULL,
+    market_h  REAL,
+    market_d  REAL,
+    market_a  REAL,
+    freq_h    REAL NOT NULL,
+    freq_d    REAL NOT NULL,
+    freq_a    REAL NOT NULL
+);
 """
 
 MATCH_COLS = [
@@ -85,6 +99,18 @@ def upsert_alias(conn, alias, canonical):
         "INSERT INTO team_aliases (alias, canonical) VALUES (?, ?) "
         "ON CONFLICT(alias) DO UPDATE SET canonical = excluded.canonical",
         (alias, canonical),
+    )
+
+
+def upsert_prediction(conn, row):
+    cols = ["match_id", "xi", "model_h", "model_d", "model_a",
+            "market_h", "market_d", "market_a", "freq_h", "freq_d", "freq_a"]
+    updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "match_id")
+    conn.execute(
+        f"INSERT INTO predictions ({', '.join(cols)}) "
+        f"VALUES ({', '.join(':' + c for c in cols)}) "
+        f"ON CONFLICT(match_id) DO UPDATE SET {updates}",
+        {c: row.get(c) for c in cols},
     )
 
 
