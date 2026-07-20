@@ -16,6 +16,13 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   3 critères sur 4 validés — bat nettement les baselines, calibration
   saine, anti-fuite OK, mais Brier à **+2,47 %** du marché (critère < 2 %).
   Le protocole interdit de re-régler ξ après lecture du test.
+- **M3.5 — pseudo-buts xG + recalibration + diagnostic promus : validé.**
+  Entraînement sur w×xG + (1-w)×buts (w = 0.6, ξ = 0.003, κ = 1 re-réglés
+  conjointement sur la validation), température t = 1.077, figés dans
+  `data/m35_frozen.json`. Résultat
+  ([reports/m35_backtest.md](reports/m35_backtest.md)) : **4 critères sur 4**,
+  Brier à **+1,78 %** du marché. Ces fichiers figés ne doivent jamais être
+  régénérés après lecture du test.
 
 ## Commandes
 
@@ -26,6 +33,8 @@ python pipeline.py --update --league E0 --season 2324   # une ligue/saison
 python check.py                      # validation (code retour 0 si tout passe)
 python backtest.py --tune|--run|--shuffle-test   # backtest M3 (voir backtest.py)
 python report.py                     # rapport -> reports/m3_backtest.md
+python backtest35.py --tune|--run|--shuffle-test # backtest M3.5 (pseudo-buts xG)
+python report35.py                   # rapport -> reports/m35_backtest.md
 python -m unittest discover -s tests # tests unitaires
 ```
 

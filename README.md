@@ -62,6 +62,21 @@ un modèle par ligue. Benchmark : cotes de clôture démargées (méthode power)
 baselines uniforme et fréquences historiques. Résultats dans
 [reports/m3_backtest.md](reports/m3_backtest.md).
 
+## Backtest M3.5 (pseudo-buts xG + recalibration)
+
+```bash
+python backtest35.py --tune          # grid 2D (w, ξ) + κ + température sur la validation
+python backtest35.py --run           # test avec réglages figés -> table predictions_m35
+python backtest35.py --shuffle-test  # contrôle anti-fuite
+python report35.py                   # rapport -> reports/m35_backtest.md
+```
+
+Trois améliorations, mêmes protocole et saisons que M3 : entraînement sur
+pseudo-buts `w×xG + (1-w)×buts` (w et ξ re-réglés conjointement sur la
+validation), recalibration monotone en température, shrinkage κ re-testé
+suite au diagnostic promus. Résultats dans
+[reports/m35_backtest.md](reports/m35_backtest.md).
+
 ## Tests
 
 ```bash
