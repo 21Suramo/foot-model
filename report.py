@@ -24,10 +24,10 @@ CALIB_TOL = 0.05       # écart max toléré prédit/observé sur ces tranches
 CLEAR_MARGIN = 0.03    # "bat nettement les baselines" = Brier meilleur d'au moins 3 % relatif
 
 
-def load_predictions(conn):
+def load_predictions(conn, table="predictions"):
     rows = [dict(r) for r in conn.execute(
-        "SELECT p.*, m.league, m.season, m.fthg, m.ftag FROM predictions p "
-        "JOIN matches m USING (match_id) ORDER BY m.date, p.match_id")]
+        f"SELECT p.*, m.league, m.season, m.date, m.home, m.away, m.fthg, m.ftag "
+        f"FROM {table} p JOIN matches m USING (match_id) ORDER BY m.date, p.match_id")]
     for r in rows:
         r["outcome"] = backtest.outcome_index(r["fthg"], r["ftag"])
         r["probs"] = {
@@ -36,6 +36,8 @@ def load_predictions(conn):
             "freq": (r["freq_h"], r["freq_d"], r["freq_a"]),
             "uniform": (1 / 3, 1 / 3, 1 / 3),
         }
+        if "raw_h" in r:
+            r["probs"]["raw"] = (r["raw_h"], r["raw_d"], r["raw_a"])
     return rows
 
 

@@ -24,10 +24,13 @@ PRIOR_WEIGHT = 2.0     # ridge κ, ~3 matchs d'évidence ; fixe, jamais réglé 
 _TAU_FLOOR = 1e-10
 
 
-def _nll_grad(theta, n, h_idx, a_idx, hg, ag, w, kappa):
+def _nll_grad(theta, n, h_idx, a_idx, hg, ag, w, kappa, masks=None):
     """NLL pondérée Dixon-Coles + ridge, et son gradient analytique.
 
     theta = [log α (n), log β (n), log γ, rho].
+    hg/ag peuvent être fractionnaires (pseudo-buts xG) : le terme Poisson
+    s'étend continûment via gammaln. masks = (m00, m01, m10, m11) désigne les
+    scores fermés RÉELS pour la correction tau ; None = déduits de hg/ag.
     """
     la, lb = theta[:n], theta[n:2 * n]
     lg, rho = theta[2 * n], theta[2 * n + 1]
@@ -41,10 +44,10 @@ def _nll_grad(theta, n, h_idx, a_idx, hg, ag, w, kappa):
     dt_dlh = np.zeros_like(lam_h)   # dtau/dλ_home
     dt_dla = np.zeros_like(lam_h)   # dtau/dλ_away
     dt_drho = np.zeros_like(lam_h)
-    m00 = (hg == 0) & (ag == 0)
-    m01 = (hg == 0) & (ag == 1)
-    m10 = (hg == 1) & (ag == 0)
-    m11 = (hg == 1) & (ag == 1)
+    if masks is None:
+        masks = ((hg == 0) & (ag == 0), (hg == 0) & (ag == 1),
+                 (hg == 1) & (ag == 0), (hg == 1) & (ag == 1))
+    m00, m01, m10, m11 = masks
     tau[m00] = 1.0 - lam_h[m00] * lam_a[m00] * rho
     dt_dlh[m00] = -lam_a[m00] * rho
     dt_dla[m00] = -lam_h[m00] * rho
@@ -136,14 +139,19 @@ class DixonColes:
                 float(np.triu(grid, 1).sum()))
 
 
-def fit(rows, xi=0.0, ref_date=None, prior_weight=PRIOR_WEIGHT, warm_start=None):
+def fit(rows, xi=0.0, ref_date=None, prior_weight=PRIOR_WEIGHT, warm_start=None,
+        xg_weight=0.0):
     """Ajuste le modèle sur des matchs joués.
 
-    rows : itérable de dicts/Rows avec date (ISO), home, away, fthg, ftag.
+    rows : itérable de dicts avec date (ISO), home, away, fthg, ftag
+        (et xg_home/xg_away si xg_weight > 0).
     ref_date : datetime.date de référence des poids exp(-xi × jours) —
         typiquement le lundi de la semaine à prédire. Tout match daté de
         ref_date ou après lève ValueError (garde anti-fuite du walk-forward).
     warm_start : DixonColes précédent pour initialiser les paramètres.
+    xg_weight : w des pseudo-buts, cible Poisson = w×xG + (1-w)×buts réels
+        (repli sur les buts réels si les xG manquent). La correction tau
+        reste calée sur les scores réels.
     """
     rows = list(rows)
     if not rows:
@@ -154,8 +162,19 @@ def fit(rows, xi=0.0, ref_date=None, prior_weight=PRIOR_WEIGHT, warm_start=None)
 
     h_idx = np.array([index[r["home"]] for r in rows])
     a_idx = np.array([index[r["away"]] for r in rows])
-    hg = np.array([r["fthg"] for r in rows], dtype=float)
-    ag = np.array([r["ftag"] for r in rows], dtype=float)
+    hg_real = np.array([r["fthg"] for r in rows], dtype=float)
+    ag_real = np.array([r["ftag"] for r in rows], dtype=float)
+    if xg_weight > 0.0:
+        xgh = np.array([r["fthg"] if r.get("xg_home") is None else r["xg_home"]
+                        for r in rows], dtype=float)
+        xga = np.array([r["ftag"] if r.get("xg_away") is None else r["xg_away"]
+                        for r in rows], dtype=float)
+        hg = (1.0 - xg_weight) * hg_real + xg_weight * xgh
+        ag = (1.0 - xg_weight) * ag_real + xg_weight * xga
+    else:
+        hg, ag = hg_real, ag_real
+    masks = ((hg_real == 0) & (ag_real == 0), (hg_real == 0) & (ag_real == 1),
+             (hg_real == 1) & (ag_real == 0), (hg_real == 1) & (ag_real == 1))
 
     dates = np.array([r["date"] for r in rows], dtype="datetime64[D]")
     if ref_date is not None:
@@ -177,7 +196,8 @@ def fit(rows, xi=0.0, ref_date=None, prior_weight=PRIOR_WEIGHT, warm_start=None)
         theta0[2 * n + 1] = warm_start.rho
 
     bounds = [(None, None)] * (2 * n + 1) + [RHO_BOUNDS]
-    res = minimize(_nll_grad, theta0, args=(n, h_idx, a_idx, hg, ag, w, prior_weight),
+    res = minimize(_nll_grad, theta0,
+                   args=(n, h_idx, a_idx, hg, ag, w, prior_weight, masks),
                    jac=True, method="L-BFGS-B", bounds=bounds)
     la, lb = res.x[:n], res.x[n:2 * n]
 

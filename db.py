@@ -50,7 +50,31 @@ CREATE TABLE IF NOT EXISTS predictions (
     freq_d    REAL NOT NULL,
     freq_a    REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS predictions_m35 (
+    match_id    INTEGER PRIMARY KEY REFERENCES matches(match_id),
+    xi          REAL NOT NULL,
+    xg_w        REAL NOT NULL,
+    kappa       REAL NOT NULL,
+    temperature REAL NOT NULL,
+    model_h     REAL NOT NULL,   -- probas recalibrées (sortie du modèle M3.5)
+    model_d     REAL NOT NULL,
+    model_a     REAL NOT NULL,
+    raw_h       REAL NOT NULL,   -- probas avant recalibration (diagnostic)
+    raw_d       REAL NOT NULL,
+    raw_a       REAL NOT NULL,
+    market_h    REAL,
+    market_d    REAL,
+    market_a    REAL,
+    freq_h      REAL NOT NULL,
+    freq_d      REAL NOT NULL,
+    freq_a      REAL NOT NULL
+);
 """
+
+M35_COLS = ["match_id", "xi", "xg_w", "kappa", "temperature",
+            "model_h", "model_d", "model_a", "raw_h", "raw_d", "raw_a",
+            "market_h", "market_d", "market_a", "freq_h", "freq_d", "freq_a"]
 
 MATCH_COLS = [
     "date", "league", "season", "home", "away",
@@ -111,6 +135,16 @@ def upsert_prediction(conn, row):
         f"VALUES ({', '.join(':' + c for c in cols)}) "
         f"ON CONFLICT(match_id) DO UPDATE SET {updates}",
         {c: row.get(c) for c in cols},
+    )
+
+
+def upsert_prediction_m35(conn, row):
+    updates = ", ".join(f"{c}=excluded.{c}" for c in M35_COLS if c != "match_id")
+    conn.execute(
+        f"INSERT INTO predictions_m35 ({', '.join(M35_COLS)}) "
+        f"VALUES ({', '.join(':' + c for c in M35_COLS)}) "
+        f"ON CONFLICT(match_id) DO UPDATE SET {updates}",
+        {c: row.get(c) for c in M35_COLS},
     )
 
 

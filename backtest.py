@@ -67,7 +67,8 @@ def demargin_power(odds_h, odds_d, odds_a):
 def load_league(conn, league):
     """Matchs joués d'une ligue, triés par date."""
     return [dict(r) for r in conn.execute(
-        "SELECT match_id, date, season, home, away, fthg, ftag, odds_h, odds_d, odds_a "
+        "SELECT match_id, date, season, home, away, fthg, ftag, "
+        "xg_home, xg_away, odds_h, odds_d, odds_a "
         "FROM matches WHERE league = ? AND fthg IS NOT NULL ORDER BY date, match_id",
         (league,))]
 
@@ -77,7 +78,8 @@ def monday_of(date_str):
     return d - datetime.timedelta(days=d.weekday())
 
 
-def walk_forward(rows, target_seasons, xi, with_market=False):
+def walk_forward(rows, target_seasons, xi, with_market=False,
+                 xg_weight=0.0, prior_weight=model.PRIOR_WEIGHT):
     """Prédit les matchs des saisons cibles, refit hebdomadaire sur le passé strict.
 
     Retourne une liste de dicts {match_id, season, date, outcome, model, freq
@@ -99,7 +101,8 @@ def walk_forward(rows, target_seasons, xi, with_market=False):
             train.append(rows[i])
             counts[outcome_index(rows[i]["fthg"], rows[i]["ftag"])] += 1
             i += 1
-        fitted = model.fit(train, xi=xi, ref_date=monday, warm_start=fitted)
+        fitted = model.fit(train, xi=xi, ref_date=monday, warm_start=fitted,
+                           xg_weight=xg_weight, prior_weight=prior_weight)
         freq = tuple(counts / counts.sum()) if counts.sum() else (1 / 3,) * 3
         for r in weeks[monday]:
             rec = {"match_id": r["match_id"], "season": r["season"], "date": r["date"],
