@@ -37,30 +37,43 @@ class TestTeamResolution(unittest.TestCase):
 
 
 class TestFreshnessBridge(unittest.TestCase):
-    def test_fresh_odds_full_weight(self):
-        w, factor, _ = predict.market_weight(0.65, age_days=1, all_margins_ok=True)
-        self.assertAlmostEqual(factor, 1.0)
-        self.assertAlmostEqual(w, 0.65)
+    BASE = predict.DEFAULT_BLEND
+    FLOOR = predict.STALE_FLOOR
 
-    def test_stale_odds_zero_weight_model_takes_over(self):
-        w, factor, _ = predict.market_weight(0.65, age_days=5, all_margins_ok=True)
-        self.assertAlmostEqual(factor, 0.0)
-        self.assertAlmostEqual(w, 0.0)
+    def test_fresh_odds_base_weight(self):
+        w, factor, _ = predict.market_weight(self.BASE, age_days=1, all_margins_ok=True)
+        self.assertAlmostEqual(factor, 1.0)
+        self.assertAlmostEqual(w, self.BASE)
+
+    def test_base_below_one_keeps_model_insurance_even_fresh(self):
+        # même sur cotes fraîches, on garde une part de modèle (assurance anti-scrape)
+        self.assertLess(self.BASE, 1.0)
+        self.assertGreaterEqual(self.BASE, 0.90)
+
+    def test_stale_odds_floor_not_zero(self):
+        w, _, _ = predict.market_weight(self.BASE, age_days=5, all_margins_ok=True)
+        self.assertAlmostEqual(w, self.FLOOR)
+        self.assertGreater(w, 0.0)  # on ne jette jamais une vraie ligne
+        # au-delà de J-5, le poids reste au plancher
+        self.assertAlmostEqual(predict.market_weight(self.BASE, 7, True)[0], self.FLOOR)
+
+    def test_floor_between_25_and_30_pct(self):
+        self.assertGreaterEqual(self.FLOOR, 0.25)
+        self.assertLessEqual(self.FLOOR, 0.30)
 
     def test_intermediate_linear_decay(self):
-        # J-3 : à mi-chemin entre J-1 (plein) et J-5 (nul) -> facteur 0.5
-        w, factor, _ = predict.market_weight(0.65, age_days=3, all_margins_ok=True)
-        self.assertAlmostEqual(factor, 0.5)
-        self.assertAlmostEqual(w, 0.325)
+        # J-3 : à mi-chemin entre J-1 (base) et J-5 (plancher)
+        w, _, _ = predict.market_weight(self.BASE, age_days=3, all_margins_ok=True)
+        self.assertAlmostEqual(w, self.FLOOR + (self.BASE - self.FLOOR) * 0.5)
 
     def test_unverified_freshness_assumes_fresh(self):
-        w, factor, _ = predict.market_weight(0.65, age_days=None, all_margins_ok=True)
+        w, factor, _ = predict.market_weight(self.BASE, age_days=None, all_margins_ok=True)
         self.assertAlmostEqual(factor, 1.0)
+        self.assertAlmostEqual(w, self.BASE)
 
     def test_bad_margin_halves_weight(self):
-        w, factor, _ = predict.market_weight(0.65, age_days=1, all_margins_ok=False)
-        self.assertAlmostEqual(factor, 0.5)
-        self.assertAlmostEqual(w, 0.325)
+        w, _, _ = predict.market_weight(self.BASE, age_days=1, all_margins_ok=False)
+        self.assertAlmostEqual(w, self.BASE * 0.5)
 
     def test_margin_ok_bounds(self):
         self.assertTrue(predict.margin_ok((1.9, 3.5, 4.2))[0])       # marge ~106 %

@@ -55,10 +55,26 @@ class TestDecayWeightMatchesCode(unittest.TestCase):
             self.assertAlmostEqual(bb.decay_weight(age),
                                    predict.market_weight(bb.BLEND_BASE, age, True)[0], places=12)
 
-    def test_fresh_full_and_stale_zero(self):
+    def test_base_uses_predict_default(self):
+        self.assertAlmostEqual(bb.BLEND_BASE, predict.DEFAULT_BLEND)
+
+    def test_fresh_base_and_stale_floor(self):
         self.assertAlmostEqual(bb.decay_weight(1), bb.BLEND_BASE)
-        self.assertAlmostEqual(bb.decay_weight(5), 0.0)
-        self.assertAlmostEqual(bb.decay_weight(7), 0.0)
+        self.assertAlmostEqual(bb.decay_weight(5), predict.STALE_FLOOR)
+        self.assertAlmostEqual(bb.decay_weight(7), predict.STALE_FLOOR)
+
+
+class TestLegacyWeight(unittest.TestCase):
+    def test_legacy_is_old_schedule(self):
+        self.assertAlmostEqual(bb.legacy_weight(1), bb.LEGACY_BLEND)
+        self.assertAlmostEqual(bb.legacy_weight(3), bb.LEGACY_BLEND * 0.5)
+        self.assertAlmostEqual(bb.legacy_weight(5), 0.0)
+        self.assertAlmostEqual(bb.legacy_weight(7), 0.0)
+
+    def test_new_schedule_weakly_dominates_legacy_weight(self):
+        # le nouveau barème garde toujours au moins autant de poids marché que l'ancien
+        for age in bb.AGES:
+            self.assertGreaterEqual(bb.decay_weight(age) + 1e-12, bb.legacy_weight(age))
 
 
 if __name__ == "__main__":

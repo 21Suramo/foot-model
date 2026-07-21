@@ -46,13 +46,30 @@ log = logging.getLogger("predict")
 JOURNAL_PATH = Path("data/production_journal.json")
 CAL_REPORT_PATH = Path("reports/production_calibration.md")
 
-# Fraîcheur des cotes → poids du marché. Le marché de clôture bat le modèle
-# (M3.5 : Brier +1,78 % vs marché), mais une ligne prise à J-3 n'intègre ni
-# les compos ni les dernières infos : sa valeur se dégrade avec l'âge. On fait
-# donc décroître linéairement le poids marché entre FRESH_MAX (pleine confiance)
-# et STALE_MIN (le modèle reprend toute la main).
-FRESH_MAX_DAYS = 1      # cotes ≤ 1 jour avant le coup d'envoi : poids marché plein
-STALE_MIN_DAYS = 5      # cotes ≥ 5 jours : poids marché nul, modèle seul
+# Fraîcheur des cotes → poids du marché (garde-fou anti-cotes-périmées).
+#
+# Le marché de clôture bat le modèle (M3.5 : Brier +1,78 %), et backtest_blend.py
+# montre qu'il le bat à TOUS les âges simulés. Le blend n'existe donc PAS pour
+# gagner du Brier sur des cotes de book fraîches — il existe comme FILET contre
+# une cote d'entrée douteuse : mal recopiée depuis le web, figée à J-3+, ou d'un
+# book soft. D'où deux garde-fous :
+#  - un poids de base < 100 % même à J-0 : une cote fraîche peut être mal
+#    récupérée, on garde toujours une petite fraction de modèle en assurance ;
+#  - une décroissance vers un PLANCHER (jamais vers 0) : même vieillie, une vraie
+#    ligne reste informative (le backtest le confirme), on ne la jette pas — on
+#    lui fait juste de moins en moins confiance à mesure qu'elle date.
+#
+# ⚠ IMPORTANT — ne pas surinterpréter le chiffre du backtest. backtest_blend.py
+# mesure ce barème sur un PROXY (interpolation ouverture↔clôture, deux vraies
+# lignes sharp) qui SOUS-ESTIME la péremption réelle visée : une cote scrapée
+# fausse ou figée est bien pire qu'une simple ouverture de book. Le gain Brier
+# qu'il chiffre (~0,9 %) est un PLANCHER de l'utilité du garde-fou, pas sa vraie
+# valeur en conditions de cotes scrapées. N'en conclus pas « le modèle ne sert à
+# rien » : le backtest ne peut pas voir le scénario que le garde-fou protège.
+FRESH_MAX_DAYS = 1      # cotes ≤ 1 jour : poids marché = base (le plus frais)
+STALE_MIN_DAYS = 5      # cotes ≥ 5 jours : poids marché = plancher (le plus périmé)
+DEFAULT_BLEND = 0.92    # poids marché de base sur cotes fraîches (garde ~8 % modèle en assurance)
+STALE_FLOOR = 0.28      # plancher de poids marché : on ne jette jamais une vraie ligne
 MARGIN_MIN = 1.0        # marge implicite < 100 % = arbitrable donc suspecte/périmée
 MARGIN_MAX = 1.12       # marge > 112 % = ligne de mauvaise qualité
 
@@ -132,21 +149,27 @@ def margin_ok(triple):
 
 
 def market_weight(base_blend, age_days, all_margins_ok):
-    """(poids_marché, facteur_fraîcheur, explication). age_days = âge des cotes
-    par rapport au coup d'envoi (None = fraîcheur non vérifiée)."""
+    """(poids_marché, fraction_de_base, explication). age_days = âge des cotes vs
+    coup d'envoi (None = fraîcheur non vérifiée). Décroissance linéaire du poids
+    de base (cotes fraîches) vers le plancher STALE_FLOOR (cotes périmées) — on ne
+    coupe jamais complètement le marché, une ligne même vieillie informe encore ;
+    une marge aberrante divise en plus le poids par 2 (cote suspecte, peut passer
+    sous le plancher car c'est alors la QUALITÉ de la cote qui est en cause)."""
+    floor = min(STALE_FLOOR, base_blend)
     if age_days is None:
-        factor, why = 1.0, "fraîcheur non vérifiée (supposée fraîche)"
+        w, why = base_blend, "fraîcheur non vérifiée (supposée fraîche)"
     elif age_days <= FRESH_MAX_DAYS:
-        factor, why = 1.0, f"cotes fraîches (J-{age_days})"
+        w, why = base_blend, f"cotes fraîches (J-{age_days})"
     elif age_days >= STALE_MIN_DAYS:
-        factor, why = 0.0, f"cotes périmées (J-{age_days}) — le modèle reprend la main"
+        w, why = floor, f"cotes périmées (J-{age_days}) — poids marché au plancher {floor:.0%}"
     else:
-        factor = (STALE_MIN_DAYS - age_days) / (STALE_MIN_DAYS - FRESH_MAX_DAYS)
-        why = f"cotes à J-{age_days} — poids marché réduit à {factor:.0%}"
+        frac = (STALE_MIN_DAYS - age_days) / (STALE_MIN_DAYS - FRESH_MAX_DAYS)
+        w = floor + (base_blend - floor) * frac
+        why = f"cotes à J-{age_days} — poids marché {w:.0%}"
     if not all_margins_ok:
-        factor *= 0.5
-        why += " ; marge implicite aberrante, poids encore divisé par 2"
-    return base_blend * factor, factor, why
+        w *= 0.5
+        why += " ; marge implicite aberrante, poids divisé par 2"
+    return w, (w / base_blend if base_blend else 0.0), why
 
 
 # ---------------------------------------------------------------------------
@@ -623,8 +646,9 @@ def main(argv=None):
                    help="Date de publication des cotes (fixe la fraîcheur du pont marché)")
     p.add_argument("--odds-age-days", type=int, default=None,
                    help="Âge des cotes en jours (alternative à --odds-date)")
-    p.add_argument("--blend", type=float, default=0.65,
-                   help="Poids marché de base sur cotes fraîches (défaut 0.65 ; décroît si périmées)")
+    p.add_argument("--blend", type=float, default=DEFAULT_BLEND,
+                   help=f"Poids marché de base sur cotes fraîches (défaut {DEFAULT_BLEND:g} ; "
+                        f"décroît vers un plancher de {STALE_FLOOR:.0%} si périmées)")
     p.add_argument("--contest-points", default=None, metavar="H,N,A",
                    help="MODE CONCOURS : points si l'issue est correcte (ex: 13,50,68)")
     p.add_argument("--contest-exact-bonus", type=float, default=0.0, metavar="B",

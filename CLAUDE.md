@@ -27,8 +27,9 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   figé du backtest et l'applique aux matchs à venir : refit à jour (même garde
   anti-fuite que le walk-forward), probas 1N2 recalibrées + grille de scores
   au format `match_model.py`. Pont marché/modèle à fraîcheur variable — le
-  poids du marché décroît avec l'âge des cotes (plein à J-1, nul à J-5), le
-  modèle sert de garde-fou anti-cotes-périmées. Mode concours (`--contest-points`)
+  poids du marché décroît avec l'âge des cotes (base 92 % à J-1, plancher 28 %
+  à partir de J-5 ; barème validé par `backtest_blend.py`), le modèle sert de
+  garde-fou anti-cotes-périmées. Mode concours (`--contest-points`)
   branché sur les probas du modèle. Journal automatique
   (`data/production_journal.json`, format `track.py`) et rapport de calibration
   mensuel (`reports/production_calibration.md`) : le monitoring continue en
@@ -83,11 +84,14 @@ python -m unittest discover -s tests # tests unitaires
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
-  par tranche d'âge vs marché frais / marché vieilli / modèle pur ; grid search
-  du poids sur la validation seule. Verdict → `reports/m5_blend_backtest.md` :
-  le blend est **plausible mais pas Brier-optimal** (sur ce proxy le marché bat
-  le modèle à tous les âges) ; sa vraie justification est le risque hors-modèle
-  d'une cote grattée sur le web, que football-data ne peut pas simuler.
+  par tranche d'âge vs marché frais / marché vieilli / modèle pur, comparé à
+  l'ancien barème ; grid search du poids sur la validation seule. Verdict →
+  `reports/m5_blend_backtest.md`. A servi à régler le barème de `predict.py`
+  (base 92 %, plancher 28 %) : +0,47 % de Brier vs l'ancien (65 %/coupure J-5),
+  sans régression. ⚠️ Ce proxy (deux vraies lignes sharp) **sous-estime** la
+  valeur du garde-fou : sur ces données le marché bat le modèle à tous les âges,
+  mais la vraie cible est une cote scrapée fausse/périmée que football-data ne
+  peut pas simuler — ne pas conclure « le modèle ne sert à rien ».
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2025-26.
 

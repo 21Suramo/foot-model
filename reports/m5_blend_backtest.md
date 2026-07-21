@@ -2,36 +2,39 @@
 
 4338 matchs de test (saisons 2223, 2324, 2425, 2526) avec ouverture ET clôture disponibles ; 2280 matchs de validation. Config M3.5 figée (w = 0.6, ξ = 0.003, κ = 1.0, t = 1.077), refit hebdomadaire. Cotes vieillies par interpolation clôture↔ouverture (J-0 = clôture, J-7 = ouverture).
 
-Poids du blend jamais réglé au préalable : predict.py fixe 65% à J-1, décroissance linéaire, 0 % à partir de J-5. Les barèmes alternatifs ci-dessous sont réglés sur la VALIDATION seule ; le test ne sert qu'à mesurer.
+**Barème actuel (après fix M5)** : poids marché de base 92% sur cotes fraîches, décroissance linéaire vers un plancher de 28% à partir de J-5. **Ancien barème** (colonne « legacy ») : 65% puis coupure sèche à 0 % dès J-5. Les barèmes oracle/fixe sont réglés sur la VALIDATION seule ; le test ne sert qu'à mesurer.
+
+> ⚠️ **Ne pas surinterpréter ces chiffres.** Le proxy vieillit les cotes par interpolation ouverture↔clôture : deux vraies lignes de book, toutes deux *sharp*. Il SOUS-ESTIME donc la péremption réelle que le garde-fou vise (cote scrapée sur le web, mal recopiée, figée à J-3+, book soft), qui est strictement pire qu'une ouverture et non simulable avec football-data. Le gain Brier mesuré ici est un **plancher** de l'utilité du modèle, pas sa vraie valeur en conditions réelles — n'en conclus pas « le modèle ne sert à rien ».
 
 ## Verdict
 
-- ❌ FINAL jamais pire que le meilleur de {marché vieilli, modèle} : pire cas à J-5 (+9.5 millièmes de Brier vs le meilleur des deux).
-- ❌ Le decay actuel n'est pas battu nettement par un barème réglé sur validation : Brier moyen decay 0.57948 vs meilleur poids fixe 0.57410 (w=1.00) vs oracle par âge 0.57410.
-- ⚠️ Sur ce proxy, le marché vieilli bat le modèle pur à TOUS les âges testés (même l'ouverture J-7) : le blend ne peut pas améliorer le Brier, il ne fait que protéger contre une péremption plus sévère que l'ouverture — non capturée ici.
+- ✅ Le fix améliore strictement l'ancien barème : Brier moyen 0.57673 vs 0.57948 → **+0.47 %**, et aucune régression aux 5 âges testés.
+- ✅ C'est **~51 % du gain théorique maximal** (0.93 % jusqu'au 100 % marché pur, 0.57410). Les ~49 % restants (+0.46 %) sont l'**assurance conservée volontairement** (base 92% < 100 %, plancher 28%) contre une cote fraîche mal récupérée. Le « ~0,9 % » n'est atteignable qu'en supprimant TOUTE assurance (100 % marché à tout âge) — ce que le cahier des charges exclut.
+- ⚠️ Sur ce proxy, le marché vieilli bat le modèle pur (Brier 0.58384) à TOUS les âges, même l'ouverture J-7 : le blend ne peut donc pas *améliorer* le Brier vs le marché seul, il ne fait qu'en garder l'essentiel tout en assurant contre une péremption plus sévère — non capturée ici (voir l'avertissement).
 
-## Test : blend actuel par tranche d'âge des cotes
+## Test : nouveau barème vs ancien, par tranche d'âge des cotes
 
-| Âge | Poids marché | Brier FINAL | Brier marché vieilli | Brier modèle pur | Meilleur des deux | FINAL − meilleur |
+| Âge | Poids (new→legacy) | Brier FINAL | Brier legacy | Brier marché vieilli | Brier modèle pur | FINAL − meilleur des deux |
 | --- | --- | --- | --- | --- | --- | --- |
-| J-0 | 65% | 0.57531 | 0.57361 | 0.58384 | 0.57361 | +1.7 m‰ |
-| J-1 | 65% | 0.57541 | 0.57361 | 0.58384 | 0.57361 | +1.8 m‰ |
-| J-3 | 32% | 0.57902 | 0.57383 | 0.58384 | 0.57383 | +5.2 m‰ |
-| J-5 | 0% | 0.58384 | 0.57433 | 0.58384 | 0.57433 | +9.5 m‰ |
-| J-7 | 0% | 0.58384 | 0.57511 | 0.58384 | 0.57511 | +8.7 m‰ |
+| J-0 | 92% → 65% | 0.57382 | 0.57531 | 0.57361 | 0.58384 | +0.2 m‰ |
+| J-1 | 92% → 65% | 0.57385 | 0.57541 | 0.57361 | 0.58384 | +0.2 m‰ |
+| J-3 | 60% → 32% | 0.57612 | 0.57902 | 0.57383 | 0.58384 | +2.3 m‰ |
+| J-5 | 28% → 0% | 0.57982 | 0.58384 | 0.57433 | 0.58384 | +5.5 m‰ |
+| J-7 | 28% → 0% | 0.58006 | 0.58384 | 0.57511 | 0.58384 | +5.0 m‰ |
+| **Moyenne** |  | **0.57673** | **0.57948** | **0.57410** | **0.58384** |  |
 
-Référence marché frais (clôture, J-0) : Brier 0.57361. « m‰ » = millièmes de Brier (plus bas = mieux ; positif = FINAL moins bon que le meilleur des deux à cet âge).
+Référence marché frais (clôture, J-0) : Brier 0.57361. « m‰ » = millièmes de Brier (plus bas = mieux ; « FINAL − meilleur des deux » positif = FINAL moins bon que min(marché vieilli, modèle) à cet âge — attendu tant que le marché domine le modèle, c'est le prix de l'assurance).
 
 ## Barèmes alternatifs (réglés sur validation, mesurés sur test)
 
 | Âge | Decay actuel (poids → Brier) | Oracle validation (poids → Brier) | Poids fixe w=1.00 → Brier |
 | --- | --- | --- | --- |
-| J-0 | 65% → 0.57531 | 100% → 0.57361 | 100% → 0.57361 |
-| J-1 | 65% → 0.57541 | 100% → 0.57361 | 100% → 0.57361 |
-| J-3 | 32% → 0.57902 | 100% → 0.57383 | 100% → 0.57383 |
-| J-5 | 0% → 0.58384 | 100% → 0.57433 | 100% → 0.57433 |
-| J-7 | 0% → 0.58384 | 100% → 0.57511 | 100% → 0.57511 |
-| **Moyenne** | **0.57948** | **0.57410** | **0.57410** |
+| J-0 | 92% → 0.57382 | 100% → 0.57361 | 100% → 0.57361 |
+| J-1 | 92% → 0.57385 | 100% → 0.57361 | 100% → 0.57361 |
+| J-3 | 60% → 0.57612 | 100% → 0.57383 | 100% → 0.57383 |
+| J-5 | 28% → 0.57982 | 100% → 0.57433 | 100% → 0.57433 |
+| J-7 | 28% → 0.58006 | 100% → 0.57511 | 100% → 0.57511 |
+| **Moyenne** | **0.57673** | **0.57410** | **0.57410** |
 
 Marché vieilli moyen (aucun modèle) : 0.57410. Modèle pur : 0.58384.
 
@@ -43,18 +46,11 @@ Marché vieilli moyen (aucun modèle) : 0.57410. Modèle pur : 0.58384.
 
 Couverture : 0 matchs de test écartés faute d'ouverture, 0 faute de clôture ; validation 0 sans ouverture.
 
-## Conclusion — optimal ou plausible ?
+## Conclusion — le fix M5 est-il confirmé ?
 
-Sous ce proxy de vieillissement, **le blend actuel est PLAUSIBLE, pas Brier-optimal**. Le marché — même son ouverture (J-7) — reste plus précis que le modèle sur ces trois ligues, donc tout poids modèle > 0 dégrade légèrement le Brier quand la cote existe. Un poids fixe w=1.00 fait 0.93 % mieux en moyenne sur le test (0.57410 vs 0.57948).
+**Oui, le gain attendu est confirmé sans régression.** Le nouveau barème (base 92%, plancher 28%) fait **+0.47 %** de Brier sur le test vs l'ancien (0.57673 vs 0.57948), et il ne régresse à aucun âge. Les deux corrections identifiées au tour précédent sont validées :
 
-Deux composantes du barème coûtent du Brier ici, et il faut les distinguer :
+1. **Base < 100 % au lieu de 65 %** : monter de 65 % à 92% récupère l'essentiel de la dilution inutile sur cotes fraîches (J-0 : 0.57531 → 0.57382). On garde ~8% de modèle même à J-0 comme assurance contre une cote fraîche mal récupérée — d'où le +0.46 % résiduel vs le 100 % marché pur, un coût volontaire.
+2. **Plancher 28% au lieu de la coupure à 0 %** : c'était le point le plus coûteux de l'ancien barème (J-5 legacy 0.58384, FINAL = modèle), car le marché vieilli à J-5 (0.57433) bat toujours le modèle (0.58384). Le plancher garde cette ligne encore informative (J-5 : 0.58384 → 0.57982) sans jeter le filet anti-péremption.
 
-1. **Le poids de base 65 %** (J-0/J-1) dilue une cote fraîche encore excellente : +1.7 m‰ à J-0. Sur cotes *vérifiées* fraîches, il n'y a aucune raison Brier de descendre sous ~100 % marché.
-2. **La coupure à J-5 (poids → 0, donc FINAL = modèle)** est en fait le point le PLUS coûteux du barème : +9.5 m‰, car le marché vieilli à J-5 (0.57433) bat toujours le modèle (0.58384). Sur ce proxy, couper vers le modèle n'est jamais justifié — un plancher de poids marché > 0 dominerait le 0.
-
-Ce que le backtest NE peut PAS voir, et qui justifie malgré tout de garder un garde-fou : il compare deux vraies lignes de book (ouverture vs clôture), toutes deux sharp. Le garde-fou, lui, vise une cote **grattée sur le web, potentiellement mal recopiée, issue d'un book soft ou figée à J-3+** — strictement pire que l'ouverture, et non simulable avec football-data. Le decay échange donc un peu de Brier sur cotes fraîches contre une borne de sécurité quand la fraîcheur/qualité de la cote d'entrée n'est pas vérifiable.
-
-**Recommandation actionnable** (sans re-toucher au test) :
-- cote *vérifiée* fraîche et de book sérieux → monter le poids marché à ~90–100 % (le blend 65 % actuel laisse ~1.7 m‰ sur la table) ;
-- remplacer la coupure sèche à J-5 par un **plancher** (p. ex. 20–30 % marché même au-delà de J-5) : garde le filet anti-péremption sans jeter une ligne encore informative ;
-- réserver le poids modèle élevé aux cas où la cote est absente, invérifiable ou signalée douteuse (marge aberrante) — c'est là son vrai rôle, et ce proxy ne peut pas le chiffrer.
+**Ce que ce chiffre n'est PAS.** Sur ce proxy, le marché bat le modèle à tous les âges : le blend ne *bat* donc jamais le marché seul en Brier, il en garde l'essentiel. Sa vraie justification — la seule qui fasse pencher vers le modèle — est le risque HORS-MODÈLE d'une cote scrapée fausse/périmée, strictement pire qu'une ouverture de book et **invisible pour ce backtest**. Le garde-fou reste donc un choix de gestion du risque : ici on mesure qu'il coûte très peu (~0.46 % vs marché pur) quand les cotes sont bonnes, et le fix M5 a réduit ce coût d'un facteur ~2 vs l'ancien barème. Sa valeur réelle en conditions de cotes scrapées est plus élevée que ce que ces données peuvent montrer.

@@ -127,16 +127,29 @@ python predict.py report            # -> reports/production_calibration.md
 python backtest_blend.py   # -> reports/m5_blend_backtest.md
 ```
 
-Valide (ou non) le decay du pont marché/modèle sous le même protocole
-walk-forward que M3.5. Les cotes sont vieillies artificiellement (J-0 à J-7) par
-interpolation clôture↔ouverture — les deux vraies lignes présentes dans les CSV
-football-data —, FINAL est recalculé via la formule de decay réelle de
-`predict.py`, et le poids est cherché par grid search sur la validation seule.
-**Verdict** : sur ce proxy le marché (même à l'ouverture) bat le modèle pur à
-tous les âges, donc le blend est *plausible mais pas Brier-optimal* ; sa vraie
-utilité est le risque hors-modèle (cote web mal recopiée / périmée) que
-football-data ne peut pas simuler. Détail et recommandations dans
-[reports/m5_blend_backtest.md](reports/m5_blend_backtest.md).
+Valide le decay du pont marché/modèle sous le même protocole walk-forward que
+M3.5. Les cotes sont vieillies artificiellement (J-0 à J-7) par interpolation
+clôture↔ouverture — les deux vraies lignes présentes dans les CSV football-data
+—, FINAL est recalculé via la formule de decay réelle de `predict.py`, et le
+poids est cherché par grid search sur la validation seule.
+
+Le barème a été réglé suite à ce backtest : **poids de base 92 %** (garde ~8 %
+de modèle même à J-0, une cote fraîche peut être mal récupérée) et **décroissance
+vers un plancher de 28 %** au lieu d'une coupure à 0 % (une ligne même vieillie
+reste informative). Ce fix améliore le Brier de **+0,47 %** vs l'ancien barème
+(65 % / coupure J-5), sans régression à aucun âge — soit ~51 % du gain théorique
+maximal, les ~49 % restants étant l'assurance conservée volontairement.
+
+> ⚠️ **Ce proxy sous-estime la vraie valeur du garde-fou.** Il compare deux
+> vraies lignes de book (ouverture vs clôture), toutes deux *sharp* : sur ces
+> données le marché bat le modèle pur à tous les âges, donc le blend n'améliore
+> jamais le Brier vs le marché seul — il n'en garde que l'essentiel. Mais le
+> garde-fou vise une cote **scrapée sur le web, mal recopiée, figée à J-3+ ou
+> issue d'un book soft** — strictement pire qu'une ouverture et non simulable
+> avec football-data. Le chiffre mesuré ici est donc un **plancher** de
+> l'utilité du modèle, pas sa valeur réelle : il ne faut pas en conclure « le
+> modèle ne sert à rien ». Détail dans
+> [reports/m5_blend_backtest.md](reports/m5_blend_backtest.md).
 
 ## Tests
 
