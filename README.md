@@ -1,9 +1,12 @@
-# foot-model — pipeline de données (M2) + backtest Dixon-Coles (M3)
+# foot-model — pipeline (M2) + backtest Dixon-Coles (M3/M3.5) + production (M5)
 
 Pipeline Python qui télécharge, normalise et stocke en SQLite des données
-historiques de matchs (résultats, cotes de clôture, xG), et modèle
-Dixon-Coles (1997) from scratch évalué en walk-forward strict contre les
-cotes de clôture démargées.
+historiques de matchs (résultats, cotes de clôture, xG), modèle Dixon-Coles
+(1997) from scratch évalué en walk-forward strict contre les cotes de clôture
+démargées, puis **mis en production** (`predict.py`) : le modèle figé prédit
+les matchs à venir, sert de garde-fou anti-cotes-périmées, et son monitoring
+continue en conditions réelles via un journal et un rapport de calibration
+mensuel.
 
 ## Sources
 
@@ -76,6 +79,47 @@ pseudo-buts `w×xG + (1-w)×buts` (w et ξ re-réglés conjointement sur la
 validation), recalibration monotone en température, shrinkage κ re-testé
 suite au diagnostic promus. Résultats dans
 [reports/m35_backtest.md](reports/m35_backtest.md).
+
+## Production M5 (prédiction des matchs à venir + monitoring)
+
+Une fois les réglages M3.5 figés (`data/m35_frozen.json`), `predict.py` sort le
+modèle du backtest et l'applique aux matchs à venir.
+
+```bash
+# Un match, avec cotes fraîches (blend marché/modèle)
+python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+    --odds 1.85,3.6,4.4 --odds 1.88,3.55,4.3 --odds-date 2026-08-14
+
+# Sans cotes (ou cotes périmées) : le modèle reprend la main
+python predict.py match --league SP1 --home "Barcelona" --away "Real Madrid"
+
+# Slate de week-end (une affiche par --fixture)
+python predict.py match --fixture "E0,Liverpool,Everton" --fixture "F1,Paris SG,Marseille"
+
+# Mode concours : maximise l'espérance de points, pas la probabilité brute
+python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+    --contest-points 13,50,68 --contest-exact-bonus 30
+
+# Enregistrer un résultat, puis produire le rapport de calibration mensuel
+python predict.py result --match "Arsenal-Chelsea" --actual 2-1
+python predict.py report            # -> reports/production_calibration.md
+```
+
+- **Refit à jour** : à chaque appel, le Dixon-Coles pseudo-buts xG est réajusté
+  sur tout l'historique joué antérieur au lundi de la semaine visée (même garde
+  anti-fuite que le walk-forward), puis probas 1N2 recalibrées + grille de
+  scores sont sorties **au format de `match_model.py`** (le moteur du skill).
+- **Pont marché/modèle (garde-fou anti-cotes-périmées)** : le poids du marché
+  décroît avec l'âge des cotes (`--odds-date` ou `--odds-age-days`) — plein à
+  J-1, nul à partir de J-5, et une marge implicite aberrante le divise encore
+  par deux. C'est le vrai apport du modèle : quand la ligne est périmée ou
+  absente, il prend le relais.
+- **Journal automatique** : chaque prédiction est écrite dans
+  `data/production_journal.json` (format `track.py`, donc relisible par le
+  skill football-match-predictor). Ré-exécuter le même match ne duplique rien.
+- **Rapport mensuel** : `predict.py report` agrège le journal par mois (Brier,
+  RPS, taux d'issues/scores exacts, calibration des nuls, FINAL vs marché) dans
+  `reports/production_calibration.md`.
 
 ## Tests
 

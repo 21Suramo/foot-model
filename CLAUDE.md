@@ -23,6 +23,16 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   ([reports/m35_backtest.md](reports/m35_backtest.md)) : **4 critères sur 4**,
   Brier à **+1,78 %** du marché. Ces fichiers figés ne doivent jamais être
   régénérés après lecture du test.
+- **M5 — mise en production : implémenté.** `predict.py` sort le modèle M3.5
+  figé du backtest et l'applique aux matchs à venir : refit à jour (même garde
+  anti-fuite que le walk-forward), probas 1N2 recalibrées + grille de scores
+  au format `match_model.py`. Pont marché/modèle à fraîcheur variable — le
+  poids du marché décroît avec l'âge des cotes (plein à J-1, nul à J-5), le
+  modèle sert de garde-fou anti-cotes-périmées. Mode concours (`--contest-points`)
+  branché sur les probas du modèle. Journal automatique
+  (`data/production_journal.json`, format `track.py`) et rapport de calibration
+  mensuel (`reports/production_calibration.md`) : le monitoring continue en
+  conditions réelles.
 
 ## Commandes
 
@@ -35,6 +45,10 @@ python backtest.py --tune|--run|--shuffle-test   # backtest M3 (voir backtest.py
 python report.py                     # rapport -> reports/m3_backtest.md
 python backtest35.py --tune|--run|--shuffle-test # backtest M3.5 (pseudo-buts xG)
 python report35.py                   # rapport -> reports/m35_backtest.md
+python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+    --odds 1.85,3.6,4.4 --odds-date 2026-08-14   # prédiction production (M5)
+python predict.py result --match "Arsenal-Chelsea" --actual 2-1   # enregistre un résultat
+python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -58,6 +72,13 @@ python -m unittest discover -s tests # tests unitaires
   (anti-fuite). Le fichier ξ figé ne doit jamais être régénéré après le test.
 - `report.py` — Brier/log-loss vs marché démargé power et baselines,
   calibration, verdicts → `reports/m3_backtest.md`.
+- `predict.py` — production M5. Sous-commandes `match` (prédit un match ou un
+  slate `--fixture`, refit à jour sur l'historique antérieur au lundi visé,
+  probas + grille au format `match_model.py`, pont marché/modèle à fraîcheur
+  variable, mode `--contest-points`, journalisation auto), `result` (enregistre
+  un score réel) et `report` (calibration mensuelle → `reports/production_calibration.md`).
+  Lit les réglages figés via `backtest35.frozen()` ; journal JSON compatible
+  avec le `track.py` du skill football-match-predictor.
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2025-26.
 
