@@ -96,6 +96,10 @@ python predict.py match --league SP1 --home "Barcelona" --away "Real Madrid"
 # Slate de week-end (une affiche par --fixture)
 python predict.py match --fixture "E0,Liverpool,Everton" --fixture "F1,Paris SG,Marseille"
 
+# Depuis l'export JSON du skill football-match-predictor (fichier ou stdin)
+python predict.py match --from-skill-json export.json
+cat export.json | python predict.py match --from-skill-json -
+
 # Mode concours : maximise l'espérance de points, pas la probabilité brute
 python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --contest-points 13,50,68 --contest-exact-bonus 30
@@ -114,12 +118,49 @@ python predict.py report            # -> reports/production_calibration.md
   J-1, nul à partir de J-5, et une marge implicite aberrante le divise encore
   par deux. C'est le vrai apport du modèle : quand la ligne est périmée ou
   absente, il prend le relais.
+- **Pont d'entrée depuis le skill** : `--from-skill-json` lit l'export
+  `football-match-predictor.skill-export/v1` (fichier ou `-` pour stdin) et mappe
+  `league/home/away/odds_1x2/match_date/odds_date` sur les arguments — résultat
+  strictement identique à ces valeurs passées à la main. Les champs `ou` (le
+  modèle price ses scores depuis sa propre grille) et `final_probs_1x2`
+  (predict.py recalcule son FINAL) sont ignorés ; une `league` absente ou hors
+  {E0, SP1, F1} lève une erreur claire plutôt que de deviner.
 - **Journal automatique** : chaque prédiction est écrite dans
   `data/production_journal.json` (format `track.py`, donc relisible par le
   skill football-match-predictor). Ré-exécuter le même match ne duplique rien.
 - **Rapport mensuel** : `predict.py report` agrège le journal par mois (Brier,
   RPS, taux d'issues/scores exacts, calibration des nuls, FINAL vs marché) dans
   `reports/production_calibration.md`.
+
+### Backtest du blend marché/modèle
+
+```bash
+python backtest_blend.py   # -> reports/m5_blend_backtest.md
+```
+
+Valide le decay du pont marché/modèle sous le même protocole walk-forward que
+M3.5. Les cotes sont vieillies artificiellement (J-0 à J-7) par interpolation
+clôture↔ouverture — les deux vraies lignes présentes dans les CSV football-data
+—, FINAL est recalculé via la formule de decay réelle de `predict.py`, et le
+poids est cherché par grid search sur la validation seule.
+
+Le barème a été réglé suite à ce backtest : **poids de base 92 %** (garde ~8 %
+de modèle même à J-0, une cote fraîche peut être mal récupérée) et **décroissance
+vers un plancher de 28 %** au lieu d'une coupure à 0 % (une ligne même vieillie
+reste informative). Ce fix améliore le Brier de **+0,47 %** vs l'ancien barème
+(65 % / coupure J-5), sans régression à aucun âge — soit ~51 % du gain théorique
+maximal, les ~49 % restants étant l'assurance conservée volontairement.
+
+> ⚠️ **Ce proxy sous-estime la vraie valeur du garde-fou.** Il compare deux
+> vraies lignes de book (ouverture vs clôture), toutes deux *sharp* : sur ces
+> données le marché bat le modèle pur à tous les âges, donc le blend n'améliore
+> jamais le Brier vs le marché seul — il n'en garde que l'essentiel. Mais le
+> garde-fou vise une cote **scrapée sur le web, mal recopiée, figée à J-3+ ou
+> issue d'un book soft** — strictement pire qu'une ouverture et non simulable
+> avec football-data. Le chiffre mesuré ici est donc un **plancher** de
+> l'utilité du modèle, pas sa valeur réelle : il ne faut pas en conclure « le
+> modèle ne sert à rien ». Détail dans
+> [reports/m5_blend_backtest.md](reports/m5_blend_backtest.md).
 
 ## Tests
 
