@@ -121,6 +121,23 @@ python predict.py report            # -> reports/production_calibration.md
   RPS, taux d'issues/scores exacts, calibration des nuls, FINAL vs marché) dans
   `reports/production_calibration.md`.
 
+### Backtest du blend marché/modèle
+
+```bash
+python backtest_blend.py   # -> reports/m5_blend_backtest.md
+```
+
+Valide (ou non) le decay du pont marché/modèle sous le même protocole
+walk-forward que M3.5. Les cotes sont vieillies artificiellement (J-0 à J-7) par
+interpolation clôture↔ouverture — les deux vraies lignes présentes dans les CSV
+football-data —, FINAL est recalculé via la formule de decay réelle de
+`predict.py`, et le poids est cherché par grid search sur la validation seule.
+**Verdict** : sur ce proxy le marché (même à l'ouverture) bat le modèle pur à
+tous les âges, donc le blend est *plausible mais pas Brier-optimal* ; sa vraie
+utilité est le risque hors-modèle (cote web mal recopiée / périmée) que
+football-data ne peut pas simuler. Détail et recommandations dans
+[reports/m5_blend_backtest.md](reports/m5_blend_backtest.md).
+
 ## Tests
 
 ```bash

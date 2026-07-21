@@ -49,6 +49,7 @@ python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --odds 1.85,3.6,4.4 --odds-date 2026-08-14   # prédiction production (M5)
 python predict.py result --match "Arsenal-Chelsea" --actual 2-1   # enregistre un résultat
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
+python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -79,6 +80,14 @@ python -m unittest discover -s tests # tests unitaires
   un score réel) et `report` (calibration mensuelle → `reports/production_calibration.md`).
   Lit les réglages figés via `backtest35.frozen()` ; journal JSON compatible
   avec le `track.py` du skill football-match-predictor.
+- `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
+  `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
+  vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
+  par tranche d'âge vs marché frais / marché vieilli / modèle pur ; grid search
+  du poids sur la validation seule. Verdict → `reports/m5_blend_backtest.md` :
+  le blend est **plausible mais pas Brier-optimal** (sur ce proxy le marché bat
+  le modèle à tous les âges) ; sa vraie justification est le risque hors-modèle
+  d'une cote grattée sur le web, que football-data ne peut pas simuler.
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2025-26.
 
