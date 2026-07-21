@@ -46,6 +46,10 @@ log = logging.getLogger("predict")
 JOURNAL_PATH = Path("data/production_journal.json")
 CAL_REPORT_PATH = Path("reports/production_calibration.md")
 
+# Export natif du skill football-match-predictor (pont d'entrée : le skill
+# rassemble les cotes web, predict.py recalcule SON propre FINAL par-dessus).
+SKILL_SCHEMA = "football-match-predictor.skill-export/v1"
+
 # Fraîcheur des cotes → poids du marché (garde-fou anti-cotes-périmées).
 #
 # Le marché de clôture bat le modèle (M3.5 : Brier +1,78 %), et backtest_blend.py
@@ -554,10 +558,74 @@ def build_calibration_report(path, month_filter=None):
 
 
 # ---------------------------------------------------------------------------
+# Export natif du skill football-match-predictor
+# ---------------------------------------------------------------------------
+
+def load_skill_json(source):
+    """Charge l'export JSON du skill. source='-' lit stdin (coller sans fichier)."""
+    try:
+        raw = sys.stdin.read() if source == "-" else Path(source).read_text()
+    except OSError as e:
+        sys.exit(f"--from-skill-json : lecture impossible ({e}).")
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as e:
+        sys.exit(f"--from-skill-json : JSON malformé ({e}).")
+    if not isinstance(doc, dict):
+        sys.exit("--from-skill-json : la racine JSON doit être un objet.")
+    if doc.get("schema") != SKILL_SCHEMA:
+        sys.exit(f"--from-skill-json : schéma '{doc.get('schema')}' inattendu "
+                 f"(attendu '{SKILL_SCHEMA}').")
+    return doc
+
+
+def skill_json_to_fixture(doc):
+    """Extrait de l'export les champs mappables sur les arguments de `match`.
+
+    Champs lus : league, home, away, match_date, odds_date, odds_1x2. Les champs
+    `ou` (le modèle de production price les scores depuis sa propre grille, il ne
+    se cale pas sur les cotes O/U) et `final_probs_1x2` (predict.py recalcule son
+    propre FINAL) sont ignorés — voir la note émise à l'appel."""
+    league = doc.get("league")
+    if league not in footballdata.LEAGUES:
+        sys.exit(f"--from-skill-json : league '{league}' absente ou invalide "
+                 f"(attendu l'une de {footballdata.LEAGUES}) — on ne devine pas.")
+    home, away = doc.get("home"), doc.get("away")
+    if not home or not away:
+        sys.exit("--from-skill-json : champs 'home' et 'away' requis.")
+    odds_spec = None
+    o = doc.get("odds_1x2")
+    if o is not None:
+        try:
+            odds_spec = f"{float(o['home'])},{float(o['draw'])},{float(o['away'])}"
+        except (KeyError, TypeError, ValueError):
+            sys.exit("--from-skill-json : 'odds_1x2' doit contenir home, draw, away numériques.")
+    return {"league": league, "home": home, "away": away, "odds_spec": odds_spec,
+            "match_date": doc.get("match_date"), "odds_date": doc.get("odds_date")}
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def cmd_match(args, conn):
+    if args.from_skill_json:
+        if (args.home or args.away or args.fixture or args.odds or args.date
+                or args.odds_date or args.odds_age_days is not None):
+            sys.exit("--from-skill-json fournit déjà league/home/away/odds/dates — "
+                     "ne les repasse pas aussi en arguments individuels.")
+        doc = load_skill_json(args.from_skill_json)
+        fx = skill_json_to_fixture(doc)
+        args.league, args.home, args.away = fx["league"], fx["home"], fx["away"]
+        if fx["odds_spec"]:
+            args.odds = [fx["odds_spec"]]
+        args.date, args.odds_date = fx["match_date"], fx["odds_date"]
+        if doc.get("ou") is not None:
+            log.info("Export skill : champ 'ou' présent mais non consommé — le modèle de "
+                     "production price les scores depuis sa propre grille entraînée, il ne se "
+                     "cale pas sur les cotes O/U du marché.")
+
+
     cfg = backtest35.frozen()
     target_date = (datetime.date.fromisoformat(args.date) if args.date else next_saturday())
 
@@ -625,7 +693,7 @@ def cmd_report(args, conn):
     print(f"Rapport écrit dans {CAL_REPORT_PATH}", file=sys.stderr)
 
 
-def main(argv=None):
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     common = argparse.ArgumentParser(add_help=False)
@@ -634,6 +702,10 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("match", parents=[common], help="prédire un ou plusieurs matchs à venir")
+    p.add_argument("--from-skill-json", default=None, metavar="FICHIER",
+                   help=f"Lit un export JSON du skill football-match-predictor (schéma "
+                        f"{SKILL_SCHEMA}) et le mappe sur league/home/away/odds/dates ; "
+                        f"'-' = stdin. Exclusif des arguments individuels correspondants.")
     p.add_argument("--league", choices=footballdata.LEAGUES)
     p.add_argument("--home")
     p.add_argument("--away")
@@ -666,8 +738,11 @@ def main(argv=None):
     rep = sub.add_parser("report", parents=[common], help="rapport de calibration mensuel du monitoring")
     rep.add_argument("--month", default=None, help="Filtrer sur un mois 'YYYY-MM'")
     rep.set_defaults(func=cmd_report)
+    return parser
 
-    args = parser.parse_args(argv)
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s",
                         datefmt="%H:%M:%S")
     conn = db.connect(args.db)

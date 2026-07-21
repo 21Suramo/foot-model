@@ -80,7 +80,11 @@ python -m unittest discover -s tests # tests unitaires
   variable, mode `--contest-points`, journalisation auto), `result` (enregistre
   un score réel) et `report` (calibration mensuelle → `reports/production_calibration.md`).
   Lit les réglages figés via `backtest35.frozen()` ; journal JSON compatible
-  avec le `track.py` du skill football-match-predictor.
+  avec le `track.py` du skill football-match-predictor. `--from-skill-json`
+  (fichier ou `-`/stdin) lit l'export `football-match-predictor.skill-export/v1`
+  et le mappe sur les arguments (`league/home/away/odds_1x2/match_date/odds_date`) —
+  sortie identique au passage manuel ; `ou` et `final_probs_1x2` ignorés,
+  `league` hors {E0,SP1,F1} → erreur.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier

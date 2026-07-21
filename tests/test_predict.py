@@ -1,4 +1,6 @@
+import contextlib
 import datetime
+import io
 import json
 import sys
 import tempfile
@@ -7,7 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import backtest35
 import db
+import footballdata
 import predict
 
 
@@ -215,6 +219,137 @@ class TestPredictMatchIntegration(unittest.TestCase):
         self.assertTrue(res["home_ok"])
         self.assertFalse(res["away_ok"])
         conn.close()
+
+
+class TestSkillJsonParsing(unittest.TestCase):
+    def _valid(self, **over):
+        doc = {
+            "schema": predict.SKILL_SCHEMA, "league": "E0",
+            "home": "Alpha", "away": "Beta",
+            "match_date": "2026-08-15", "odds_date": "2026-08-14",
+            "odds_1x2": {"home": 1.85, "draw": 3.6, "away": 4.4},
+            "ou": {"line": 2.5, "over": 1.95, "under": 1.9},
+            "final_probs_1x2": {"home": 0.55, "draw": 0.26, "away": 0.19},
+        }
+        doc.update(over)
+        return doc
+
+    def _write(self, doc):
+        d = tempfile.mkdtemp()
+        p = Path(d) / "skill.json"
+        p.write_text(json.dumps(doc))
+        return str(p)
+
+    def test_valid_maps_all_fields(self):
+        fx = predict.skill_json_to_fixture(self._valid())
+        self.assertEqual(fx["league"], "E0")
+        self.assertEqual((fx["home"], fx["away"]), ("Alpha", "Beta"))
+        self.assertEqual(fx["odds_spec"], "1.85,3.6,4.4")
+        self.assertEqual(fx["match_date"], "2026-08-15")
+        self.assertEqual(fx["odds_date"], "2026-08-14")
+
+    def test_malformed_json_exits(self):
+        d = tempfile.mkdtemp()
+        p = Path(d) / "bad.json"
+        p.write_text("{not valid json")
+        with self.assertRaises(SystemExit):
+            predict.load_skill_json(p)
+
+    def test_wrong_schema_exits(self):
+        with self.assertRaises(SystemExit):
+            predict.load_skill_json(self._write(self._valid(schema="autre/v1")))
+
+    def test_missing_league_exits(self):
+        doc = self._valid()
+        del doc["league"]
+        with self.assertRaises(SystemExit):
+            predict.skill_json_to_fixture(doc)
+
+    def test_invalid_league_exits_no_guess(self):
+        with self.assertRaises(SystemExit):
+            predict.skill_json_to_fixture(self._valid(league="BL1"))
+
+    def test_ou_absent_is_fine(self):
+        doc = self._valid()
+        del doc["ou"]
+        fx = predict.skill_json_to_fixture(doc)  # ne lève pas
+        self.assertEqual(fx["odds_spec"], "1.85,3.6,4.4")
+
+    def test_odds_absent_yields_none_spec(self):
+        doc = self._valid()
+        del doc["odds_1x2"]
+        self.assertIsNone(predict.skill_json_to_fixture(doc)["odds_spec"])
+
+    def test_odds_non_numeric_exits(self):
+        with self.assertRaises(SystemExit):
+            predict.skill_json_to_fixture(self._valid(odds_1x2={"home": "x", "draw": 3.6, "away": 4.4}))
+
+    def test_final_probs_ignored(self):
+        # final_probs_1x2 n'est jamais lu (predict.py recalcule son FINAL)
+        fx = predict.skill_json_to_fixture(self._valid(final_probs_1x2={"home": 9, "draw": 9, "away": 9}))
+        self.assertNotIn("final_probs", fx)
+
+
+class TestSkillJsonEquivalence(unittest.TestCase):
+    """Le chemin --from-skill-json doit produire EXACTEMENT le même stdout que
+    les mêmes valeurs passées en arguments individuels."""
+
+    def _mini_db(self):
+        conn = db.connect(":memory:")
+        base = datetime.date(2025, 8, 1)
+        for wk in range(20):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            hg, ag = (3, 0) if wk % 2 == 0 else (2, 1)
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Alpha", "away": "Beta", "fthg": hg, "ftag": ag})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Beta", "away": "Alpha", "fthg": 0, "ftag": 2})
+        conn.commit()
+        return conn
+
+    def _run(self, argv, conn):
+        args = predict.build_parser().parse_args(argv)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            args.func(args, conn)
+        return buf.getvalue()
+
+    def test_json_path_equals_individual_args(self):
+        doc = {
+            "schema": predict.SKILL_SCHEMA, "league": "E0",
+            "home": "Alpha", "away": "Beta",
+            "match_date": "2026-08-15", "odds_date": "2026-08-14",
+            "odds_1x2": {"home": 1.85, "draw": 3.6, "away": 4.4},
+            "ou": {"line": 2.5, "over": 1.95, "under": 1.9},
+            "final_probs_1x2": {"home": 0.55, "draw": 0.26, "away": 0.19},
+        }
+        d = tempfile.mkdtemp()
+        path = str(Path(d) / "skill.json")
+        Path(path).write_text(json.dumps(doc))
+
+        frozen = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        orig = backtest35.frozen
+        backtest35.frozen = lambda: frozen
+        try:
+            out_json = self._run(["match", "--from-skill-json", path, "--no-log"], self._mini_db())
+            out_args = self._run(["match", "--league", "E0", "--home", "Alpha", "--away", "Beta",
+                                  "--date", "2026-08-15", "--odds", "1.85,3.6,4.4",
+                                  "--odds-date", "2026-08-14", "--no-log"], self._mini_db())
+        finally:
+            backtest35.frozen = orig
+        self.assertEqual(out_json, out_args)
+        self.assertIn("poids marché 92%", out_json)  # cotes fraîches J-1 -> base 92 %
+
+    def test_conflicting_individual_arg_exits(self):
+        doc = {"schema": predict.SKILL_SCHEMA, "league": "E0", "home": "Alpha", "away": "Beta"}
+        d = tempfile.mkdtemp()
+        path = str(Path(d) / "skill.json")
+        Path(path).write_text(json.dumps(doc))
+        args = predict.build_parser().parse_args(
+            ["match", "--from-skill-json", path, "--home", "X", "--no-log"])
+        with self.assertRaises(SystemExit):
+            args.func(args, self._mini_db())
 
 
 if __name__ == "__main__":

@@ -96,6 +96,10 @@ python predict.py match --league SP1 --home "Barcelona" --away "Real Madrid"
 # Slate de week-end (une affiche par --fixture)
 python predict.py match --fixture "E0,Liverpool,Everton" --fixture "F1,Paris SG,Marseille"
 
+# Depuis l'export JSON du skill football-match-predictor (fichier ou stdin)
+python predict.py match --from-skill-json export.json
+cat export.json | python predict.py match --from-skill-json -
+
 # Mode concours : maximise l'espérance de points, pas la probabilité brute
 python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --contest-points 13,50,68 --contest-exact-bonus 30
@@ -114,6 +118,13 @@ python predict.py report            # -> reports/production_calibration.md
   J-1, nul à partir de J-5, et une marge implicite aberrante le divise encore
   par deux. C'est le vrai apport du modèle : quand la ligne est périmée ou
   absente, il prend le relais.
+- **Pont d'entrée depuis le skill** : `--from-skill-json` lit l'export
+  `football-match-predictor.skill-export/v1` (fichier ou `-` pour stdin) et mappe
+  `league/home/away/odds_1x2/match_date/odds_date` sur les arguments — résultat
+  strictement identique à ces valeurs passées à la main. Les champs `ou` (le
+  modèle price ses scores depuis sa propre grille) et `final_probs_1x2`
+  (predict.py recalcule son FINAL) sont ignorés ; une `league` absente ou hors
+  {E0, SP1, F1} lève une erreur claire plutôt que de deviner.
 - **Journal automatique** : chaque prédiction est écrite dans
   `data/production_journal.json` (format `track.py`, donc relisible par le
   skill football-match-predictor). Ré-exécuter le même match ne duplique rien.
