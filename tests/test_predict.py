@@ -1,0 +1,208 @@
+import datetime
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import db
+import predict
+
+
+class TestTeamResolution(unittest.TestCase):
+    teams = ["Man City", "Arsenal", "Nott'm Forest", "Paris SG"]
+    aliases = {"Manchester City": "Man City", "Paris Saint Germain": "Paris SG"}
+
+    def test_exact_canonical(self):
+        self.assertEqual(predict.resolve_team("Arsenal", self.teams, self.aliases), ("Arsenal", True))
+
+    def test_alias_understat_name(self):
+        self.assertEqual(predict.resolve_team("Manchester City", self.teams, self.aliases),
+                         ("Man City", True))
+
+    def test_case_insensitive(self):
+        self.assertEqual(predict.resolve_team("arsenal", self.teams, self.aliases), ("Arsenal", True))
+
+    def test_partial_unique(self):
+        # "Forest" est contenu dans un seul nom d'équipe
+        self.assertEqual(predict.resolve_team("Forest", self.teams, self.aliases),
+                         ("Nott'm Forest", True))
+
+    def test_unknown_returns_original_not_found(self):
+        name, ok = predict.resolve_team("Chelsea", self.teams, self.aliases)
+        self.assertEqual(name, "Chelsea")
+        self.assertFalse(ok)
+
+
+class TestFreshnessBridge(unittest.TestCase):
+    def test_fresh_odds_full_weight(self):
+        w, factor, _ = predict.market_weight(0.65, age_days=1, all_margins_ok=True)
+        self.assertAlmostEqual(factor, 1.0)
+        self.assertAlmostEqual(w, 0.65)
+
+    def test_stale_odds_zero_weight_model_takes_over(self):
+        w, factor, _ = predict.market_weight(0.65, age_days=5, all_margins_ok=True)
+        self.assertAlmostEqual(factor, 0.0)
+        self.assertAlmostEqual(w, 0.0)
+
+    def test_intermediate_linear_decay(self):
+        # J-3 : à mi-chemin entre J-1 (plein) et J-5 (nul) -> facteur 0.5
+        w, factor, _ = predict.market_weight(0.65, age_days=3, all_margins_ok=True)
+        self.assertAlmostEqual(factor, 0.5)
+        self.assertAlmostEqual(w, 0.325)
+
+    def test_unverified_freshness_assumes_fresh(self):
+        w, factor, _ = predict.market_weight(0.65, age_days=None, all_margins_ok=True)
+        self.assertAlmostEqual(factor, 1.0)
+
+    def test_bad_margin_halves_weight(self):
+        w, factor, _ = predict.market_weight(0.65, age_days=1, all_margins_ok=False)
+        self.assertAlmostEqual(factor, 0.5)
+        self.assertAlmostEqual(w, 0.325)
+
+    def test_margin_ok_bounds(self):
+        self.assertTrue(predict.margin_ok((1.9, 3.5, 4.2))[0])       # marge ~106 %
+        self.assertFalse(predict.margin_ok((2.1, 3.6, 4.4))[0])      # marge < 100 % (arbitrable)
+        self.assertFalse(predict.margin_ok((1.5, 3.0, 3.0))[0])      # marge > 112 %
+
+
+class TestMarketConsensus(unittest.TestCase):
+    def test_consensus_demargined_sums_to_one_and_best_odds(self):
+        market, best = predict.market_consensus([(1.85, 3.6, 4.4), (1.90, 3.5, 4.3)])
+        self.assertAlmostEqual(sum(market.values()), 1.0, places=9)
+        self.assertEqual(best["home"], 1.90)  # meilleure cote domicile
+        self.assertEqual(best["away"], 4.4)
+
+
+class TestGridHelpers(unittest.TestCase):
+    def setUp(self):
+        # petite grille jouet 3x3 normalisée
+        self.grid = {(0, 0): 0.20, (1, 0): 0.25, (0, 1): 0.08,
+                     (1, 1): 0.15, (2, 0): 0.20, (0, 2): 0.12}
+
+    def test_over_and_btts(self):
+        self.assertAlmostEqual(predict.over_prob(self.grid, 1.5), 0.15 + 0.20 + 0.12)
+        self.assertAlmostEqual(predict.btts_prob(self.grid), 0.15)
+
+    def test_best_score_per_outcome(self):
+        self.assertEqual(predict.best_score_for_outcome(self.grid, "home"), "1-0")
+        self.assertEqual(predict.best_score_for_outcome(self.grid, "draw"), "0-0")
+        self.assertEqual(predict.best_score_for_outcome(self.grid, "away"), "0-2")
+
+
+class TestNextSaturday(unittest.TestCase):
+    def test_tuesday_gives_coming_saturday(self):
+        self.assertEqual(predict.next_saturday(datetime.date(2026, 7, 21)),
+                         datetime.date(2026, 7, 25))
+
+    def test_saturday_returns_itself(self):
+        sat = datetime.date(2026, 7, 25)
+        self.assertEqual(predict.next_saturday(sat), sat)
+
+
+class TestJournal(unittest.TestCase):
+    def _res(self, home, away, date, market=None):
+        return {
+            "league": "E0", "home": home, "away": away,
+            "date": datetime.date.fromisoformat(date),
+            "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.65 if market else 0.0,
+            "odds_age_days": 1 if market else None,
+            "final": {"home": 0.55, "draw": 0.25, "away": 0.20},
+            "market": market,
+            "grid": {(1, 0): 0.3, (1, 1): 0.25, (0, 1): 0.2, (2, 1): 0.25},
+        }
+
+    def test_log_is_idempotent_on_rerun(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15"))
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15"))
+            entries = json.loads(path.read_text())
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["predicted_score"], "1-0")  # meilleur score si victoire A
+
+    def test_result_settles_latest_unsettled(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15"))
+            predict.record_result(path, "A-B", "2-1")
+            e = json.loads(path.read_text())[0]
+            self.assertEqual(e["actual_score"], "2-1")
+
+    def test_report_computes_brier_and_market_gap(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            mkt = {"home": 0.50, "draw": 0.27, "away": 0.23}
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15", market=mkt))
+            predict.record_result(path, "A-B", "2-1")  # issue home -> pronostic correct
+            text, overall = predict.build_calibration_report(path)
+            self.assertEqual(overall["n"], 1)
+            self.assertEqual(overall["issue_rate"], 1.0)
+            self.assertIsNotNone(overall["brier_market"])
+            self.assertIn("2026-08", text)
+
+
+class TestRps(unittest.TestCase):
+    def test_perfect_prediction_zero_rps(self):
+        self.assertAlmostEqual(predict.rps((1.0, 0.0, 0.0), 0), 0.0)
+
+    def test_uniform_reference(self):
+        self.assertAlmostEqual(predict.rps((1 / 3, 1 / 3, 1 / 3), 1), 0.5 * ((1 / 3) ** 2 + (1 / 3) ** 2))
+
+
+class TestPredictMatchIntegration(unittest.TestCase):
+    """Intègre fit + résolution + blend sur une base SQLite en mémoire."""
+
+    def _mini_db(self):
+        conn = db.connect(":memory:")
+        # deux équipes, plusieurs journées d'historique, A nettement plus forte
+        base = datetime.date(2025, 8, 1)
+        mid = 1
+        for wk in range(20):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            hg, ag = (3, 0) if wk % 2 == 0 else (2, 1)
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Alpha", "away": "Beta", "fthg": hg, "ftag": ag})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Beta", "away": "Alpha", "fthg": 0, "ftag": 2})
+        conn.commit()
+        return conn
+
+    def test_model_only_when_no_odds(self):
+        conn = self._mini_db()
+        cfg = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        res = predict.predict_match(conn, cfg, "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {})
+        self.assertAlmostEqual(sum(res["final"].values()), 1.0, places=9)
+        self.assertIsNone(res["market"])
+        self.assertEqual(res["market_weight"], 0.0)
+        self.assertGreater(res["final"]["home"], res["final"]["away"])  # Alpha favorite
+        conn.close()
+
+    def test_blend_moves_toward_market_when_fresh(self):
+        conn = self._mini_db()
+        cfg = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        # marché quasi équilibré : le blend doit tirer la proba domicile vers le bas
+        res_model = predict.predict_match(conn, cfg, "E0", "Alpha", "Beta",
+                                          datetime.date(2026, 8, 15), [], None, 0.65, {})
+        res_blend = predict.predict_match(conn, cfg, "E0", "Alpha", "Beta",
+                                          datetime.date(2026, 8, 15), ["2.5,3.2,2.8"], 1, 0.65, {})
+        self.assertGreater(res_blend["market_weight"], 0.0)
+        self.assertLess(res_blend["final"]["home"], res_model["final"]["home"])
+        conn.close()
+
+    def test_unknown_team_flagged(self):
+        conn = self._mini_db()
+        cfg = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        res = predict.predict_match(conn, cfg, "E0", "Alpha", "Zzz Unknown",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {})
+        self.assertTrue(res["home_ok"])
+        self.assertFalse(res["away_ok"])
+        conn.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
