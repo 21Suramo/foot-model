@@ -1,4 +1,12 @@
 __pycache__/
 *.pyc
-data/
 .pytest_cache/
+
+# Données : tout ignoré par défaut (base reconstructible via `pipeline.py --update`)...
+data/*
+# ... sauf ces deux fichiers, qui contiennent des données personnelles de paris
+# et sont versionnés volontairement (voir data/README.md). Le repo DOIT rester privé.
+!data/football.db
+!data/production_journal.json
+!data/README.md
+# data/raw/ reste ignoré : cache re-téléchargeable, inutile de le versionner
