@@ -1,0 +1,730 @@
+[
+  {
+    "match": "Arsenal-Coventry",
+    "date": "2026-08-21",
+    "competition": "E0",
+    "probs": {
+      "home": 0.8067818665233725,
+      "draw": 0.1303541619888175,
+      "away": 0.06286397148781014
+    },
+    "market_probs": {
+      "home": 0.8353666228141833,
+      "draw": 0.11193475941336788,
+      "away": 0.05269861777244877
+    },
+    "predicted_score": "2-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.201,
+      "lambda_away": 0.756,
+      "market_weight": 0.76,
+      "odds_age_days": 2
+    }
+  },
+  {
+    "match": "Hull-Man United",
+    "date": "2026-08-22",
+    "competition": "E0",
+    "probs": {
+      "home": 0.19888586492615926,
+      "draw": 0.22098113357748156,
+      "away": 0.5801330014963593
+    },
+    "market_probs": {
+      "home": 0.11398572521482367,
+      "draw": 0.19530073819162888,
+      "away": 0.6907135365935474
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.41,
+      "lambda_away": 1.597,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Everton-Crystal Palace",
+    "date": "2026-08-22",
+    "competition": "E0",
+    "probs": {
+      "home": 0.4233583569926873,
+      "draw": 0.27551620907358976,
+      "away": 0.30112543393372293
+    },
+    "market_probs": {
+      "home": 0.43895985094581985,
+      "draw": 0.272382558627092,
+      "away": 0.28865759042708816
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.416,
+      "lambda_away": 1.255,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Ipswich-Sunderland",
+    "date": "2026-08-22",
+    "competition": "E0",
+    "probs": {
+      "home": 0.31705901718529594,
+      "draw": 0.28602101521943857,
+      "away": 0.3969199675952655
+    },
+    "market_probs": {
+      "home": 0.34870973434612057,
+      "draw": 0.28833847438384436,
+      "away": 0.362951791270035
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.105,
+      "lambda_away": 1.458,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Nott'm Forest-Leeds",
+    "date": "2026-08-22",
+    "competition": "E0",
+    "probs": {
+      "home": 0.40996947347543533,
+      "draw": 0.2746482930996042,
+      "away": 0.3153822334249605
+    },
+    "market_probs": {
+      "home": 0.41686066531079113,
+      "draw": 0.2770608117231833,
+      "away": 0.30607852296602567
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.482,
+      "lambda_away": 1.337,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Brentford-Tottenham",
+    "date": "2026-08-22",
+    "competition": "E0",
+    "probs": {
+      "home": 0.47921431704453127,
+      "draw": 0.24748715303738947,
+      "away": 0.2732985299180793
+    },
+    "market_probs": {
+      "home": 0.37233751271199395,
+      "draw": 0.2685530980017552,
+      "away": 0.3591093892862681
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.894,
+      "lambda_away": 1.259,
+      "market_weight": 0.3,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Brighton-Aston Villa",
+    "date": "2026-08-23",
+    "competition": "E0",
+    "probs": {
+      "home": 0.434127920419797,
+      "draw": 0.2603451017518909,
+      "away": 0.3055269778283122
+    },
+    "market_probs": {
+      "home": 0.4278741005080656,
+      "draw": 0.25648793602019765,
+      "away": 0.3156379634717368
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.598,
+      "lambda_away": 1.303,
+      "market_weight": 0.44,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Man City-Bournemouth",
+    "date": "2026-08-23",
+    "competition": "E0",
+    "probs": {
+      "home": 0.6350043656752561,
+      "draw": 0.20286249620287797,
+      "away": 0.16213313812186594
+    },
+    "market_probs": {
+      "home": 0.6602984169068961,
+      "draw": 0.19252350906884144,
+      "away": 0.14717807402426256
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.172,
+      "lambda_away": 1.146,
+      "market_weight": 0.44,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Newcastle-Liverpool",
+    "date": "2026-08-23",
+    "competition": "E0",
+    "probs": {
+      "home": 0.32144667281413875,
+      "draw": 0.2438748051175567,
+      "away": 0.4346785220683046
+    },
+    "market_probs": {
+      "home": 0.2602145470249933,
+      "draw": 0.24616661070324916,
+      "away": 0.49361884227175745
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.665,
+      "lambda_away": 1.707,
+      "market_weight": 0.44,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Fulham-Chelsea",
+    "date": "2026-08-24",
+    "competition": "E0",
+    "probs": {
+      "home": 0.325563200028398,
+      "draw": 0.2600779339814098,
+      "away": 0.41435886599019217
+    },
+    "market_probs": {
+      "home": 0.26277871868790553,
+      "draw": 0.24673075448806342,
+      "away": 0.49049052682403094
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.427,
+      "lambda_away": 1.499,
+      "market_weight": 0.28,
+      "odds_age_days": 5
+    }
+  },
+  {
+    "match": "Marseille-Strasbourg",
+    "date": "2026-08-21",
+    "competition": "F1",
+    "probs": {
+      "home": 0.5678463558275462,
+      "draw": 0.21462011913175627,
+      "away": 0.21753352504069753
+    },
+    "market_probs": {
+      "home": 0.5735134786157622,
+      "draw": 0.21587046679093555,
+      "away": 0.21061605459330218
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.116,
+      "lambda_away": 1.393,
+      "market_weight": 0.76,
+      "odds_age_days": 2
+    }
+  },
+  {
+    "match": "Le Mans-Brest",
+    "date": "2026-08-22",
+    "competition": "F1",
+    "probs": {
+      "home": 0.42164051537764247,
+      "draw": 0.26096051804399845,
+      "away": 0.3173989665783591
+    },
+    "market_probs": {
+      "home": 0.38374818083172885,
+      "draw": 0.2703570102167679,
+      "away": 0.3458948089515034
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.667,
+      "lambda_away": 1.24,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Toulouse-Lyon",
+    "date": "2026-08-22",
+    "competition": "F1",
+    "probs": {
+      "home": 0.32291445742448643,
+      "draw": 0.2572602564252441,
+      "away": 0.4198252861502695
+    },
+    "market_probs": {
+      "home": 0.2698891656738374,
+      "draw": 0.25387389483990286,
+      "away": 0.4762369394862598
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.443,
+      "lambda_away": 1.307,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Lens-Auxerre",
+    "date": "2026-08-22",
+    "competition": "F1",
+    "probs": {
+      "home": 0.6488733495001272,
+      "draw": 0.20683964764133767,
+      "away": 0.14428700285853518
+    },
+    "market_probs": {
+      "home": 0.6425853255089162,
+      "draw": 0.20902543401456367,
+      "away": 0.14838924047652008
+    },
+    "predicted_score": "2-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.048,
+      "lambda_away": 0.886,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Nice-Lorient",
+    "date": "2026-08-22",
+    "competition": "F1",
+    "probs": {
+      "home": 0.45243670903654415,
+      "draw": 0.256716739633692,
+      "away": 0.2908465513297638
+    },
+    "market_probs": {
+      "home": 0.4540354214754815,
+      "draw": 0.2620142407619293,
+      "away": 0.28395033776258916
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.623,
+      "lambda_away": 1.311,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Troyes-Paris FC",
+    "date": "2026-08-22",
+    "competition": "F1",
+    "probs": {
+      "home": 0.3358166622312754,
+      "draw": 0.26247596556418773,
+      "away": 0.4017073722045369
+    },
+    "market_probs": {
+      "home": 0.34460464006184754,
+      "draw": 0.2624244000612137,
+      "away": 0.39297095987693875
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.274,
+      "lambda_away": 1.46,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Angers-Lille",
+    "date": "2026-08-23",
+    "competition": "F1",
+    "probs": {
+      "home": 0.1847523057948499,
+      "draw": 0.2599215178193283,
+      "away": 0.5553261763858217
+    },
+    "market_probs": {
+      "home": 0.17516000099533513,
+      "draw": 0.23785389996174108,
+      "away": 0.5869860990429238
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 0.818,
+      "lambda_away": 1.515,
+      "market_weight": 0.22,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Paris SG-Rennes",
+    "date": "2026-08-23",
+    "competition": "F1",
+    "probs": {
+      "home": 0.7143157255270837,
+      "draw": 0.16375056210549827,
+      "away": 0.12193371236741808
+    },
+    "market_probs": {
+      "home": 0.688062011554348,
+      "draw": 0.1760259354430102,
+      "away": 0.13591205300264173
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.682,
+      "lambda_away": 1.049,
+      "market_weight": 0.44,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Ath Madrid-Malaga",
+    "date": "2026-08-19",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.7439858654003672,
+      "draw": 0.16651578380671972,
+      "away": 0.0894983507929131
+    },
+    "market_probs": {
+      "home": 0.7527939549712577,
+      "draw": 0.1644739948018977,
+      "away": 0.08273205022684457
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.086,
+      "lambda_away": 1.01,
+      "market_weight": 0.92,
+      "odds_age_days": 1
+    }
+  },
+  {
+    "match": "Vallecano-Alaves",
+    "date": "2026-08-20",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.436582702225289,
+      "draw": 0.2856714628329177,
+      "away": 0.27774583494179333
+    },
+    "market_probs": {
+      "home": 0.43116931620455234,
+      "draw": 0.2890839139721375,
+      "away": 0.2797467698233102
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.506,
+      "lambda_away": 1.024,
+      "market_weight": 0.92,
+      "odds_age_days": 1
+    }
+  },
+  {
+    "match": "Betis-Sociedad",
+    "date": "2026-08-21",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.4897818630227156,
+      "draw": 0.2601177334669309,
+      "away": 0.2501004035103535
+    },
+    "market_probs": {
+      "home": 0.4664276776323609,
+      "draw": 0.275615703302885,
+      "away": 0.257956619064754
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.886,
+      "lambda_away": 1.15,
+      "market_weight": 0.76,
+      "odds_age_days": 2
+    }
+  },
+  {
+    "match": "Valencia-Celta",
+    "date": "2026-08-22",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.4362652853842198,
+      "draw": 0.26822954639284097,
+      "away": 0.29550516822293926
+    },
+    "market_probs": {
+      "home": 0.4179362099538628,
+      "draw": 0.28634208646487164,
+      "away": 0.2957217035812654
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.526,
+      "lambda_away": 1.185,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Espanol-Real Madrid",
+    "date": "2026-08-22",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.2080581852579605,
+      "draw": 0.2346675872412039,
+      "away": 0.5572742275008357
+    },
+    "market_probs": {
+      "home": 0.20032727775218687,
+      "draw": 0.24843883649421125,
+      "away": 0.5512338857536019
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.101,
+      "lambda_away": 1.846,
+      "market_weight": 0.6,
+      "odds_age_days": 3
+    }
+  },
+  {
+    "match": "Ath Madrid-Villarreal",
+    "date": "2026-08-23",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.5316641983880624,
+      "draw": 0.21765764850525182,
+      "away": 0.25067815310668573
+    },
+    "market_probs": {
+      "home": 0.5202412120891093,
+      "draw": 0.2620561210800716,
+      "away": 0.21770266683084044
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.987,
+      "lambda_away": 1.365,
+      "market_weight": 0.22,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Getafe-Racing Santander",
+    "date": "2026-08-23",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.4259965715567451,
+      "draw": 0.30464302948215993,
+      "away": 0.269360398961095
+    },
+    "market_probs": {
+      "home": 0.4467205907744269,
+      "draw": 0.3253650214948712,
+      "away": 0.22791438773070186
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.143,
+      "lambda_away": 0.948,
+      "market_weight": 0.44,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Elche-Barcelona",
+    "date": "2026-08-23",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.15122123093207476,
+      "draw": 0.17251705432705594,
+      "away": 0.6762617147408694
+    },
+    "market_probs": {
+      "home": 0.11627345566902901,
+      "draw": 0.17075854372356755,
+      "away": 0.7129680006074033
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.243,
+      "lambda_away": 2.39,
+      "market_weight": 0.44,
+      "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Osasuna-Levante",
+    "date": "2026-08-24",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.5283938618540585,
+      "draw": 0.22666583888863484,
+      "away": 0.24494029925730676
+    },
+    "market_probs": {
+      "home": 0.5703845169339383,
+      "draw": 0.23066159872988135,
+      "away": 0.19895388433618025
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 1.72,
+      "lambda_away": 1.194,
+      "market_weight": 0.28,
+      "odds_age_days": 5
+    }
+  },
+  {
+    "match": "Real Madrid-Sociedad",
+    "date": "2026-08-26",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.7273906145100169,
+      "draw": 0.15983986947349857,
+      "away": 0.11276951601648472
+    },
+    "market_probs": {
+      "home": 0.7215281806185175,
+      "draw": 0.17881592541098779,
+      "away": 0.09965589397049476
+    },
+    "predicted_score": "2-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "lambda_home": 2.506,
+      "lambda_away": 0.972,
+      "market_weight": 0.28,
+      "odds_age_days": 7
+    }
+  }
+]
