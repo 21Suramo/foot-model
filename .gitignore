@@ -8,5 +8,6 @@ data/*
 # et sont versionnés volontairement (voir data/README.md). Le repo DOIT rester privé.
 !data/football.db
 !data/production_journal.json
+!data/m35_frozen.json
 !data/README.md
 # data/raw/ reste ignoré : cache re-téléchargeable, inutile de le versionner
