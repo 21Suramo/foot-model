@@ -161,6 +161,139 @@ class TestJournal(unittest.TestCase):
             self.assertIn("2026-08", text)
 
 
+class TestSyncResults(unittest.TestCase):
+    """Fermeture automatique de la boucle : journal <- football.db."""
+
+    def _db(self):
+        conn = db.connect(":memory:")
+        # match connu de la source, avec mi-temps
+        db.upsert_match(conn, {"date": "2026-08-22", "league": "E0", "season": "2627",
+                               "home": "Arsenal", "away": "Chelsea",
+                               "fthg": 2, "ftag": 1, "hthg": 1, "htag": 0})
+        # match connu sans mi-temps renseignée
+        db.upsert_match(conn, {"date": "2026-08-23", "league": "E0", "season": "2627",
+                               "home": "Everton", "away": "Crystal Palace",
+                               "fthg": 0, "ftag": 0})
+        # affiche programmée mais pas encore jouée côté source (score NULL)
+        db.upsert_match(conn, {"date": "2026-08-24", "league": "E0", "season": "2627",
+                               "home": "Leeds", "away": "Fulham"})
+        db.upsert_alias(conn, "Crystal Palace FC", "Crystal Palace")
+        conn.commit()
+        return conn
+
+    def _journal(self, d):
+        path = Path(d) / "j.json"
+        entries = [
+            {"match": "Arsenal-Chelsea", "date": "2026-08-22", "competition": "E0",
+             "probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
+             "predicted_score": "2-1", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+            {"match": "Everton-Crystal Palace", "date": "2026-08-23", "competition": "E0",
+             "probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+             "predicted_score": "1-1", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+            # match passé absent de la source (retard football-data)
+            {"match": "Hull-Man United", "date": "2026-08-21", "competition": "E0",
+             "probs": {"home": 0.2, "draw": 0.2, "away": 0.6},
+             "predicted_score": "1-2", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+            # match à venir : ni synchronisé ni en attente
+            {"match": "Leeds-Fulham", "date": "2026-09-05", "competition": "E0",
+             "probs": {"home": 0.35, "draw": 0.3, "away": 0.35},
+             "predicted_score": "1-1", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+        ]
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_sync_fills_known_and_flags_missing(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            synced, pending = predict.sync_results(conn, path,
+                                                   as_of=datetime.date(2026, 8, 30))
+            self.assertEqual([s["match"] for s in synced],
+                             ["Arsenal-Chelsea", "Everton-Crystal Palace"])
+            self.assertEqual([p["match"] for p in pending], ["Hull-Man United"])
+            entries = {e["match"]: e for e in json.loads(path.read_text())}
+            self.assertEqual(entries["Arsenal-Chelsea"]["actual_score"], "2-1")
+            self.assertEqual(entries["Arsenal-Chelsea"]["actual_ht"], "1-0")
+            self.assertEqual(entries["Everton-Crystal Palace"]["actual_score"], "0-0")
+            self.assertIsNone(entries["Everton-Crystal Palace"]["actual_ht"])
+            # jamais de score inventé pour l'absent, ni pour le match à venir
+            self.assertIsNone(entries["Hull-Man United"]["actual_score"])
+            self.assertIsNone(entries["Leeds-Fulham"]["actual_score"])
+        conn.close()
+
+    def test_future_match_is_not_pending(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            _, pending = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            self.assertNotIn("Leeds-Fulham", [p["match"] for p in pending])
+        conn.close()
+
+    def test_scheduled_but_unplayed_stays_pending(self):
+        """Une ligne en base sans score (fthg NULL) n'est pas un résultat."""
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Fulham", "date": "2026-08-24", "competition": "E0",
+                 "probs": {"home": 0.35, "draw": 0.3, "away": 0.35},
+                 "predicted_score": "1-1", "bets": [], "actual_score": None,
+                 "actual_ht": None, "meta": {"model": "M5"}}]))
+            synced, pending = predict.sync_results(conn, path,
+                                                   as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(synced, [])
+            self.assertEqual(len(pending), 1)
+            self.assertIsNone(json.loads(path.read_text())[0]["actual_score"])
+        conn.close()
+
+    def test_sync_is_idempotent_and_reports_shift(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            # date prévue samedi, match joué le dimanche : tolérance de calendrier
+            path.write_text(json.dumps([
+                {"match": "Arsenal-Chelsea", "date": "2026-08-21", "competition": "E0",
+                 "probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
+                 "predicted_score": "2-1", "bets": [], "actual_score": None,
+                 "actual_ht": None, "meta": {"model": "M5"}}]))
+            synced, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(synced[0]["shift"], 1)
+            # deuxième passage : plus rien à faire
+            synced2, pending2 = predict.sync_results(conn, path,
+                                                     as_of=datetime.date(2026, 8, 30))
+            self.assertEqual((synced2, pending2), ([], []))
+        conn.close()
+
+    def test_teams_resolved_via_meta_and_alias(self):
+        conn = self._db()
+        teams = predict.league_teams(conn, "E0")
+        aliases = db.load_aliases(conn)
+        self.assertEqual(predict.split_match_key("Everton-Crystal Palace", teams, aliases),
+                         ("Everton", "Crystal Palace"))
+        entry = {"match": "peu importe", "meta": {"home": "Arsenal", "away": "Chelsea"}}
+        self.assertEqual(predict.entry_teams(entry, teams, aliases), ("Arsenal", "Chelsea"))
+        conn.close()
+
+    def test_unresolvable_match_key_stays_pending(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Zzz Unknown-Yyy Unknown", "date": "2026-08-22",
+                 "competition": "E0", "probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                 "predicted_score": "1-1", "bets": [], "actual_score": None,
+                 "actual_ht": None, "meta": {"model": "M5"}}]))
+            synced, pending = predict.sync_results(conn, path,
+                                                   as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(synced, [])
+            self.assertIn("non résolues", pending[0]["reason"])
+        conn.close()
+
+
 class TestRps(unittest.TestCase):
     def test_perfect_prediction_zero_rps(self):
         self.assertAlmostEqual(predict.rps((1.0, 0.0, 0.0), 0), 0.0)

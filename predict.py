@@ -24,6 +24,7 @@ Usage :
         [--date 2026-08-15] [--odds 1.85,3.6,4.4 --odds 1.88,3.55,4.3] \
         [--odds-date 2026-08-14] [--contest-points 13,50,68]
     python predict.py result --match "Arsenal-Chelsea" --actual 2-1 [--ht 1-0]
+    python pipeline.py --update && python predict.py sync-results
     python predict.py report [--month 2026-08]
 """
 import argparse
@@ -422,7 +423,8 @@ def log_prediction(path, res):
         "market_probs": res["market"],
         "predicted_score": best_score_for_outcome(res["grid"], max(res["final"], key=res["final"].get)),
         "bets": [], "actual_score": None, "actual_ht": None,
-        "meta": {"model": "M5", "lambda_home": round(res["lam_h"], 3),
+        "meta": {"model": "M5", "home": res["home"], "away": res["away"],
+                 "lambda_home": round(res["lam_h"], 3),
                  "lambda_away": round(res["lam_a"], 3),
                  "market_weight": round(res["market_weight"], 3),
                  "odds_age_days": res["odds_age_days"]},
@@ -437,15 +439,129 @@ def log_prediction(path, res):
     return entry
 
 
+def settle_entry(entry, actual, actual_ht=None):
+    """Pose le résultat réel sur une entrée du journal."""
+    entry["actual_score"] = actual
+    entry["actual_ht"] = actual_ht
+    return entry
+
+
 def record_result(path, match, actual, actual_ht=None):
     entries = load_journal(path)
     for e in reversed(entries):
         if e["match"].lower() == match.lower() and e.get("actual_score") is None:
-            e["actual_score"] = actual
-            e["actual_ht"] = actual_ht
+            settle_entry(e, actual, actual_ht)
             save_journal(path, entries)
             return e
     sys.exit(f"Aucune prédiction non réglée pour '{match}' dans {path}.")
+
+
+# ---------------------------------------------------------------------------
+# Synchronisation des résultats depuis football.db (fermeture de la boucle)
+#
+# `result` demande une commande manuelle par match — en pratique le journal
+# reste vide et le monitoring ne mesure rien. `sync-results` va chercher les
+# scores dans la base déjà alimentée par pipeline.py --update. Règle absolue :
+# on ne remplit que ce que la source contient, jamais un score deviné.
+# ---------------------------------------------------------------------------
+
+SYNC_TOLERANCE_DAYS = 2   # report de calendrier toléré (même convention que xgjoin)
+
+
+def league_teams(conn, league):
+    """Noms canoniques des équipes vues dans la base pour cette ligue."""
+    if not league:
+        return []
+    rows = conn.execute(
+        "SELECT DISTINCT home AS t FROM matches WHERE league = ? "
+        "UNION SELECT DISTINCT away AS t FROM matches WHERE league = ?",
+        (league, league))
+    return [r["t"] for r in rows]
+
+
+def split_match_key(match, teams, alias_map):
+    """'Domicile-Extérieur' -> (domicile, extérieur) canoniques, ou None.
+
+    Un nom d'équipe peut contenir un tiret : on essaie chaque coupure et on ne
+    retient que celles dont les DEUX moitiés se résolvent. Si zéro ou plusieurs
+    coupures conviennent, on renvoie None — mieux vaut laisser l'entrée en
+    attente que de régler le mauvais match."""
+    cands = []
+    for i, ch in enumerate(match):
+        if ch != "-" or i == 0 or i == len(match) - 1:
+            continue
+        home, home_ok = resolve_team(match[:i], teams, alias_map)
+        away, away_ok = resolve_team(match[i + 1:], teams, alias_map)
+        if home_ok and away_ok and home != away:
+            cands.append((home, away))
+    return cands[0] if len(cands) == 1 else None
+
+
+def entry_teams(entry, teams, alias_map):
+    """(domicile, extérieur) d'une entrée : depuis meta si présent (entrées
+    récentes), sinon en redécoupant la clé 'match' (entrées historiques)."""
+    meta = entry.get("meta") or {}
+    if meta.get("home") and meta.get("away"):
+        return meta["home"], meta["away"]
+    return split_match_key(entry["match"], teams, alias_map)
+
+
+def find_actual_result(conn, league, home, away, date_iso, tolerance=SYNC_TOLERANCE_DAYS):
+    """(ligne, décalage_en_jours) du match joué correspondant, ou (None, None).
+
+    Fenêtre de ±tolerance jours autour de la date prévue : un match reporté
+    garde le même couple d'équipes, et deux fois la même affiche en 5 jours
+    n'existe pas. Une ligne sans score (fthg NULL) n'est jamais renvoyée."""
+    target = datetime.date.fromisoformat(date_iso)
+    lo = (target - datetime.timedelta(days=tolerance)).isoformat()
+    hi = (target + datetime.timedelta(days=tolerance)).isoformat()
+    rows = conn.execute(
+        "SELECT date, fthg, ftag, hthg, htag FROM matches "
+        "WHERE league = ? AND home = ? AND away = ? AND fthg IS NOT NULL "
+        "AND ftag IS NOT NULL AND date BETWEEN ? AND ?",
+        (league, home, away, lo, hi)).fetchall()
+    if not rows:
+        return None, None
+    shift = lambda r: (datetime.date.fromisoformat(r["date"]) - target).days
+    best = min(rows, key=lambda r: abs(shift(r)))
+    return best, shift(best)
+
+
+def sync_results(conn, path, as_of=None):
+    """Remplit actual_score des matchs passés depuis football.db.
+
+    Renvoie (synchronisés, en_attente). Un match passé absent de la base (source
+    en retard, alias manquant) reste `null` et ressort en attente : on n'invente
+    jamais un score. Suppose que `pipeline.py --update` a déjà tourné."""
+    as_of = as_of or datetime.date.today()
+    entries = load_journal(path)
+    alias_map = db.load_aliases(conn)
+    teams_cache = {}
+    synced, pending = [], []
+    for e in entries:
+        if e.get("actual_score") is not None or e["date"] >= as_of.isoformat():
+            continue
+        league = e.get("competition")
+        if league not in teams_cache:
+            teams_cache[league] = league_teams(conn, league)
+        pair = entry_teams(e, teams_cache[league], alias_map)
+        if pair is None:
+            pending.append({"match": e["match"], "date": e["date"],
+                            "reason": "équipes non résolues (alias manquant ?)"})
+            continue
+        row, shift = find_actual_result(conn, league, pair[0], pair[1], e["date"])
+        if row is None:
+            pending.append({"match": e["match"], "date": e["date"],
+                            "reason": "absent de football.db (source en retard ?)"})
+            continue
+        actual_ht = (f"{row['hthg']}-{row['htag']}"
+                     if row["hthg"] is not None and row["htag"] is not None else None)
+        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht)
+        synced.append({"match": e["match"], "date": e["date"],
+                       "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift})
+    if synced:
+        save_journal(path, entries)
+    return synced, pending
 
 
 # ---------------------------------------------------------------------------
@@ -685,6 +801,21 @@ def cmd_result(args, conn):
     print(f"Résultat enregistré : {args.match} {args.actual} — {issue}{exact}")
 
 
+def cmd_sync_results(args, conn):
+    as_of = datetime.date.fromisoformat(args.as_of) if args.as_of else None
+    synced, pending = sync_results(conn, args.log, as_of)
+    for s in synced:
+        note = f"  (joué à {s['shift']:+d} j de la date prévue)" if s["shift"] else ""
+        print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}")
+    if pending:
+        print("\nEn attente de données source :")
+        for p in pending:
+            print(f"  ..  {p['date']}  {p['match']} — {p['reason']}")
+        print("  (relance `python pipeline.py --update` puis cette commande ; si "
+              "l'attente persiste, creuse la source football-data ou l'alias manquant.)")
+    print(f"\n{len(synced)} résultat(s) synchronisé(s), {len(pending)} encore en attente.")
+
+
 def cmd_report(args, conn):
     text, overall = build_calibration_report(args.log, args.month)
     CAL_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -734,6 +865,14 @@ def build_parser():
     r.add_argument("--actual", required=True, help="Score réel, ex: 2-1")
     r.add_argument("--ht", default=None, help="Score mi-temps 'h-a' (optionnel)")
     r.set_defaults(func=cmd_result)
+
+    s = sub.add_parser("sync-results", parents=[common],
+                       help="remplir les résultats réels depuis football.db "
+                            "(après `pipeline.py --update`)")
+    s.add_argument("--as-of", default=None, metavar="YYYY-MM-DD",
+                   help="Date de référence : seuls les matchs antérieurs sont "
+                        "synchronisés (défaut : aujourd'hui)")
+    s.set_defaults(func=cmd_sync_results)
 
     rep = sub.add_parser("report", parents=[common], help="rapport de calibration mensuel du monitoring")
     rep.add_argument("--month", default=None, help="Filtrer sur un mois 'YYYY-MM'")
