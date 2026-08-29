@@ -50,7 +50,7 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
 
 ```bash
 pip install pandas requests numpy scipy   # dépendances (scipy requis par model.py)
-python pipeline.py --update          # tout mettre à jour (3 ligues x 8 saisons)
+python pipeline.py --update          # tout mettre à jour (3 ligues x 9 saisons)
 python pipeline.py --update --league E0 --season 2324   # une ligue/saison
 python check.py                      # validation (code retour 0 si tout passe)
 python backtest.py --tune|--run|--shuffle-test   # backtest M3 (voir backtest.py)
@@ -74,6 +74,8 @@ python -m unittest discover -s tests # tests unitaires
 - `footballdata.py` — CSV football-data.co.uk avec cache dans
   `data/raw/football-data/` ; priorité cotes de clôture Pinnacle, repli
   moyenne du marché, puis ouverture (saison 2018-19, colonne `odds_source`).
+  `expected_current_season(date)` déduit le code de saison du calendrier
+  (bascule en juillet) — sert au garde-fou de `check.py`.
 - `understat.py` — xG Understat, cache dans `data/raw/understat/`.
 - `xgjoin.py` — jointure xG sur (date, home, away) après résolution
   d'alias, tolérance ±2 jours.
@@ -118,7 +120,16 @@ python -m unittest discover -s tests # tests unitaires
   mais la vraie cible est une cote scrapée fausse/périmée que football-data ne
   peut pas simuler — ne pas conclure « le modèle ne sert à rien ».
 
-Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2025-26.
+Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2026-27.
+
+**Passage de saison** : `SEASONS` et `CURRENT_SEASON` (footballdata.py) sont des
+constantes à rallonger chaque été. L'oubli est silencieux — la saison en cours
+n'est jamais téléchargée, donc `predict.py sync-results` ne trouve aucun résultat
+et blâme la source (« absent de football.db ») alors que la vraie cause est la
+liste figée. `check.py` compare désormais `expected_current_season()` (déduite du
+calendrier) à `SEASONS`/`CURRENT_SEASON` et affiche un avertissement dès la
+bascule, sans faire échouer le code retour (hors-saison ou publication tardive de
+la source ne sont pas des erreurs).
 
 ## Routine de suivi (à partir de M5.1)
 

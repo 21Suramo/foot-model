@@ -117,6 +117,25 @@ def check(conn):
             "WHERE fthg IS NOT NULL AND xg_home IS NULL ORDER BY date LIMIT 20"):
             print(f"  {r['date']} {r['league']} {r['home']} vs {r['away']}")
 
+    # Passage de saison : avertissement seulement, jamais un échec. Hors-saison ou
+    # avant publication de la source, l'absence est normale ; ce qui ne l'est pas,
+    # c'est de ne s'en apercevoir qu'en constatant que sync-results ne remonte rien.
+    print("\n=== Couverture du calendrier ===")
+    expected = footballdata.expected_current_season()
+    if expected not in footballdata.SEASONS:
+        print(f"⚠ Saison {expected} probablement disponible mais absente de "
+              f"SEASONS/CURRENT_SEASON dans footballdata.py — vérifier et ajouter.")
+        print("  (avertissement, pas un échec : la source ne l'a peut-être pas "
+              "encore publiée. Sans elle, la saison en cours n'est jamais "
+              "téléchargée et `predict.py sync-results` ne trouve aucun résultat.)")
+    elif footballdata.CURRENT_SEASON != expected:
+        print(f"⚠ CURRENT_SEASON vaut {footballdata.CURRENT_SEASON} alors que le "
+              f"calendrier indique {expected} — le cache de la saison en cours ne "
+              f"sera pas rafraîchi (cf. footballdata.fetch).")
+    else:
+        print(f"saison en cours {expected} : présente dans SEASONS et "
+              f"CURRENT_SEASON  OK")
+
     print(f"\n=== Résultat global : {'OK' if ok else 'ÉCHEC'} ===")
     return ok
 

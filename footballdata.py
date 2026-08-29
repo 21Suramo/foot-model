@@ -1,4 +1,5 @@
 """Téléchargement (avec cache) et parsing des CSV football-data.co.uk."""
+import datetime
 import logging
 import time
 from pathlib import Path
@@ -42,6 +43,22 @@ ODDS_AH = [
     ("AvgAHH", "AvgAHA"),
     ("BbAvAHH", "BbAvAHA"),
 ]
+
+def expected_current_season(today=None):
+    """Code de saison attendu à une date donnée ('2627' pour la saison 2026-27).
+
+    Convention du football européen : une saison démarre en août. On bascule dès
+    juillet (mois ≥ 7) pour que le code de la nouvelle saison soit connu avant la
+    première journée — la source publie son CSV en amont du coup d'envoi.
+
+    Sert de garde-fou : SEASONS et CURRENT_SEASON sont des constantes qu'il faut
+    rallonger chaque été, et l'oubli est silencieux (la saison en cours n'est
+    simplement jamais téléchargée, donc `predict.py sync-results` ne trouve aucun
+    résultat et blâme la source). check.py compare les deux et avertit."""
+    today = today or datetime.date.today()
+    start = today.year if today.month >= 7 else today.year - 1
+    return f"{start % 100:02d}{(start + 1) % 100:02d}"
+
 
 _last_request_ts = 0.0
 

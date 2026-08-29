@@ -1,3 +1,4 @@
+import datetime
 import json
 import sys
 import unittest
@@ -11,6 +12,35 @@ import understat
 import xgjoin
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+class TestExpectedCurrentSeason(unittest.TestCase):
+    """Garde-fou du passage de saison : SEASONS/CURRENT_SEASON sont des listes
+    figées, l'oubli de la nouvelle saison est silencieux (la saison en cours
+    n'est jamais téléchargée et sync-results blâme la source à tort)."""
+
+    def test_reference_dates(self):
+        cases = {
+            (2027, 1, 15): "2627",   # milieu de saison : l'année civile a changé
+            (2027, 8, 15): "2728",   # première journée de la saison suivante
+            (2026, 6, 30): "2526",   # intersaison : encore la saison écoulée
+            (2026, 7, 1): "2627",    # bascule en juillet, avant le coup d'envoi
+            (2026, 12, 31): "2627",
+        }
+        for (y, m, d), expected in cases.items():
+            with self.subTest(date=f"{y}-{m:02d}-{d:02d}"):
+                self.assertEqual(
+                    footballdata.expected_current_season(datetime.date(y, m, d)),
+                    expected)
+
+    def test_century_rollover_stays_two_digits(self):
+        # convention de la source : codes à 2+2 chiffres, 1999-2000 s'écrit "9900"
+        self.assertEqual(
+            footballdata.expected_current_season(datetime.date(1999, 9, 1)), "9900")
+
+    def test_declared_season_is_consistent(self):
+        self.assertIn(footballdata.CURRENT_SEASON, footballdata.SEASONS)
+        self.assertEqual(footballdata.CURRENT_SEASON, max(footballdata.SEASONS))
 
 
 class TestFootballDataParsing(unittest.TestCase):
