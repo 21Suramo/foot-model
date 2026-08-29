@@ -609,6 +609,101 @@ def month_metrics(entries):
     }
 
 
+# --- Découpage par fraîcheur des cotes ------------------------------------
+#
+# Le Brier global agrège des prédictions faites à 92 % de marché et d'autres à
+# 28 % : un bon chiffre d'ensemble peut masquer une sous-performance propre aux
+# cotes périmées. C'est précisément la zone que backtest_blend.py reconnaît ne
+# pas savoir simuler (son proxy sous-estime la péremption réelle), donc la seule
+# mesure possible est celle-ci, en production.
+
+BUCKET_MIN_N = 15         # sous ce seuil, lecture indicative et aucun delta
+STALE_ALERT_GAP_PTS = 2.0  # écart d'alerte, en points de la colonne « Δ vs marché »
+                           # (= (Brier − Brier marché) × 100, échelle de la table « Par mois »)
+
+BUCKET_ORDER = ("fraiches", "intermediaires", "perimees", "inconnue")
+
+
+def bucket_labels():
+    """Libellés des buckets, dérivés des seuils de market_weight() (pas de
+    duplication : si un seuil bouge, le rapport suit)."""
+    return {
+        "fraiches": f"Fraîches (≤ {FRESH_MAX_DAYS} j, poids marché {DEFAULT_BLEND:.0%})",
+        "intermediaires": f"Intermédiaires ({FRESH_MAX_DAYS + 1}–{STALE_MIN_DAYS - 1} j, "
+                          f"poids dégressif)",
+        "perimees": f"Périmées (≥ {STALE_MIN_DAYS} j, poids marché {STALE_FLOOR:.0%})",
+        "inconnue": "Fraîcheur non renseignée (hors barème)",
+    }
+
+
+def freshness_bucket(entry):
+    """Bucket de fraîcheur d'une entrée, aux seuils exacts de market_weight()."""
+    age = (entry.get("meta") or {}).get("odds_age_days")
+    if age is None:
+        return "inconnue"
+    if age <= FRESH_MAX_DAYS:
+        return "fraiches"
+    if age >= STALE_MIN_DAYS:
+        return "perimees"
+    return "intermediaires"
+
+
+def freshness_section(settled):
+    """Lignes markdown de la section « Par fraîcheur des cotes »."""
+    labels = bucket_labels()
+    by_bucket = {}
+    for e in settled:
+        by_bucket.setdefault(freshness_bucket(e), []).append(e)
+
+    lines = ["## Par fraîcheur des cotes", "",
+             f"Découpage sur `meta.odds_age_days` aux seuils du pont marché/modèle "
+             f"(`market_weight`) : ≤ {FRESH_MAX_DAYS} j = poids de base "
+             f"{DEFAULT_BLEND:.0%}, ≥ {STALE_MIN_DAYS} j = plancher {STALE_FLOOR:.0%}. "
+             f"Le Brier global mélange les deux régimes ; c'est ici que se voit une "
+             f"sous-performance propre aux cotes périmées.", "",
+             "| Fraîcheur | n | Brier | Brier marché | Δ vs marché | Lecture |",
+             "| --- | --- | --- | --- | --- | --- |"]
+    deltas = {}
+    for key in BUCKET_ORDER:
+        rows = by_bucket.get(key)
+        if not rows:
+            continue
+        m = month_metrics(rows)
+        bmkt = f"{m['brier_market']:.4f}" if m["brier_market"] is not None else "—"
+        if m["n"] < BUCKET_MIN_N:
+            delta, read = "—", f"indicative (n < {BUCKET_MIN_N})"
+        elif m["brier_market"] is None:
+            delta, read = "—", "aucune cote journalisée"
+        elif m["n_market"] < BUCKET_MIN_N:
+            delta, read = "—", f"indicative ({m['n_market']} match(s) avec cotes)"
+        else:
+            d = (m["brier"] - m["brier_market"]) * 100
+            deltas[key] = d
+            delta, read = f"{d:+.2f} %", "exploitable"
+        lines.append(f"| {labels[key]} | {m['n']} | {m['brier']:.4f} | {bmkt} | "
+                     f"{delta} | {read} |")
+    lines.append("")
+
+    stale, fresh = deltas.get("perimees"), deltas.get("fraiches")
+    if stale is not None and fresh is not None:
+        gap = stale - fresh
+        if gap > STALE_ALERT_GAP_PTS:
+            lines += [f"⚠ Les cotes périmées performent moins bien que prévu par le "
+                      f"backtest — le garde-fou mérite d'être revu.",
+                      "",
+                      f"  (Δ vs marché : {stale:+.2f} % sur cotes périmées contre "
+                      f"{fresh:+.2f} % sur cotes fraîches, soit {gap:+.2f} pts d'écart, "
+                      f"au-delà du seuil de {STALE_ALERT_GAP_PTS:.0f} pts. À relire sur un "
+                      f"trimestre complet avant de toucher au barème.)", ""]
+        else:
+            lines += [f"- Écart périmées − fraîches : {gap:+.2f} pt(s) de Δ vs marché "
+                      f"(seuil d'alerte {STALE_ALERT_GAP_PTS:.0f} pts) — le barème tient.", ""]
+    elif "perimees" in by_bucket:
+        lines += [f"- Comparaison périmées vs fraîches indisponible : il faut "
+                  f"n ≥ {BUCKET_MIN_N} avec cotes dans LES DEUX buckets.", ""]
+    return lines
+
+
 def build_calibration_report(path, month_filter=None):
     settled = [e for e in load_journal(path) if e.get("actual_score")]
     if month_filter:
@@ -642,6 +737,8 @@ def build_calibration_report(path, month_filter=None):
                  f"{overall['rps']:.4f} | {overall['issue_rate']:.0%} | "
                  f"{overall['exact_rate']:.0%} | {overall['draw_pred']:.0%} / {overall['draw_obs']:.0%} |")
     lines.append("")
+
+    lines += freshness_section(settled)
 
     # Focus sur le dernier mois (ou le mois filtré)
     focus = month_filter or sorted(by_month)[-1]

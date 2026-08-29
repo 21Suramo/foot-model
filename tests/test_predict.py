@@ -294,6 +294,93 @@ class TestSyncResults(unittest.TestCase):
         conn.close()
 
 
+class TestFreshnessSection(unittest.TestCase):
+    """Le rapport doit distinguer cotes fraîches et cotes périmées."""
+
+    def _entry(self, i, age, actual="2-1", probs=None, market=None):
+        return {
+            "match": f"A{i}-B{i}", "date": "2026-08-15", "competition": "E0",
+            "probs": probs or {"home": 0.55, "draw": 0.25, "away": 0.20},
+            "market_probs": market or {"home": 0.50, "draw": 0.27, "away": 0.23},
+            "predicted_score": "2-1", "bets": [],
+            "actual_score": actual, "actual_ht": None,
+            "meta": {"model": "M5", "odds_age_days": age},
+        }
+
+    def _journal(self, d, entries):
+        path = Path(d) / "j.json"
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_three_buckets_counted(self):
+        entries = ([self._entry(i, 0) for i in range(4)]        # fraîches (0 et 1 j)
+                   + [self._entry(10 + i, 1) for i in range(3)]
+                   + [self._entry(20 + i, 3) for i in range(5)]  # intermédiaires
+                   + [self._entry(30 + i, 6) for i in range(2)])  # périmées
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertIn("## Par fraîcheur des cotes", text)
+        labels = predict.bucket_labels()
+        rows = {line.split("|")[1].strip(): line.split("|")[2].strip()
+                for line in text.splitlines() if line.startswith("| ")}
+        self.assertEqual(rows[labels["fraiches"]], "7")
+        self.assertEqual(rows[labels["intermediaires"]], "5")
+        self.assertEqual(rows[labels["perimees"]], "2")
+
+    def test_bucket_boundaries_follow_market_weight_thresholds(self):
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.FRESH_MAX_DAYS)),
+                         "fraiches")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.FRESH_MAX_DAYS + 1)),
+                         "intermediaires")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.STALE_MIN_DAYS - 1)),
+                         "intermediaires")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.STALE_MIN_DAYS)),
+                         "perimees")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, None)), "inconnue")
+
+    def test_small_bucket_shows_count_but_no_delta(self):
+        entries = [self._entry(i, 7) for i in range(3)]
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        row = next(l for l in text.splitlines()
+                   if l.startswith("| " + predict.bucket_labels()["perimees"]))
+        self.assertEqual(row.split("|")[2].strip(), "3")
+        self.assertEqual(row.split("|")[5].strip(), "—")       # aucun delta
+        self.assertIn("indicative", row.split("|")[6])
+
+    def test_alert_when_stale_bucket_underperforms(self):
+        # fraîches : FINAL ~= marché ; périmées : FINAL nettement pire que le marché
+        good = {"home": 0.55, "draw": 0.25, "away": 0.20}
+        mkt = {"home": 0.55, "draw": 0.25, "away": 0.20}
+        bad = {"home": 0.25, "draw": 0.25, "away": 0.50}
+        entries = ([self._entry(i, 1, probs=good, market=mkt) for i in range(20)]
+                   + [self._entry(50 + i, 6, probs=bad, market=mkt) for i in range(20)])
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertIn("Les cotes périmées performent moins bien que prévu par le "
+                      "backtest", text)
+
+    def test_no_alert_when_stale_bucket_holds(self):
+        same = {"home": 0.55, "draw": 0.25, "away": 0.20}
+        mkt = {"home": 0.54, "draw": 0.26, "away": 0.20}
+        entries = ([self._entry(i, 1, probs=same, market=mkt) for i in range(20)]
+                   + [self._entry(50 + i, 6, probs=same, market=mkt) for i in range(20)])
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertNotIn("mérite d'être revu", text)
+        self.assertIn("le barème tient", text)
+
+    def test_unknown_freshness_is_not_counted_as_fresh(self):
+        entries = [self._entry(i, None) for i in range(3)] + [self._entry(9, 1)]
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        labels = predict.bucket_labels()
+        rows = {line.split("|")[1].strip(): line.split("|")[2].strip()
+                for line in text.splitlines() if line.startswith("| ")}
+        self.assertEqual(rows[labels["inconnue"]], "3")
+        self.assertEqual(rows[labels["fraiches"]], "1")
+
+
 class TestRps(unittest.TestCase):
     def test_perfect_prediction_zero_rps(self):
         self.assertAlmostEqual(predict.rps((1.0, 0.0, 0.0), 0), 0.0)
