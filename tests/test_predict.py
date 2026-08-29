@@ -381,6 +381,101 @@ class TestFreshnessSection(unittest.TestCase):
         self.assertEqual(rows[labels["fraiches"]], "1")
 
 
+class TestBetsAndRoi(unittest.TestCase):
+    """Le journal doit garder la trace des mises Kelly pour mesurer un P&L."""
+
+    def _res(self, home="A", away="B", date="2026-08-15", final=None, best_odds=None):
+        return {
+            "league": "E0", "home": home, "away": away,
+            "date": datetime.date.fromisoformat(date),
+            "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+            "final": final or {"home": 0.55, "draw": 0.25, "away": 0.20},
+            "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+            "best_odds": best_odds or {"home": 2.20, "draw": 3.60, "away": 4.40},
+            "grid": {(1, 0): 0.3, (1, 1): 0.25, (0, 1): 0.2, (2, 1): 0.25},
+        }
+
+    def test_bets_persisted_with_odds_and_stake(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res())
+            bets = json.loads(path.read_text())[0]["bets"]
+            self.assertEqual([b["issue"] for b in bets], ["home"])  # seule issue en value
+            self.assertEqual(bets[0]["odds"], 2.20)
+            self.assertAlmostEqual(bets[0]["stake_pct"],
+                                   predict.kelly_stake(0.55, 2.20), places=6)
+
+    def test_no_stake_leaves_bets_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res(), no_stake=True)
+            self.assertEqual(json.loads(path.read_text())[0]["bets"], [])
+
+    def test_no_odds_no_bets(self):
+        res = self._res()
+        res["best_odds"] = None
+        self.assertEqual(predict.prediction_bets(res), [])
+
+    def test_bet_settled_as_win_and_loss(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res())            # pari sur 'home'
+            predict.log_prediction(path, self._res(home="C", away="D"))
+            predict.record_result(path, "A-B", "2-1")            # issue home : gagné
+            predict.record_result(path, "C-D", "0-1")            # issue away : perdu
+            entries = {e["match"]: e for e in json.loads(path.read_text())}
+            won = entries["A-B"]["bets"][0]
+            lost = entries["C-D"]["bets"][0]
+            self.assertAlmostEqual(won["realized_pct"], won["stake_pct"] * (2.20 - 1.0),
+                                   places=6)
+            self.assertAlmostEqual(lost["realized_pct"], -lost["stake_pct"], places=6)
+
+    def test_settled_bet_never_recomputed(self):
+        entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                           "realized_pct": 0.012}]}
+        predict.settle_entry(entry, "0-3")   # issue away : recalculer donnerait -0.01
+        self.assertEqual(entry["bets"][0]["realized_pct"], 0.012)
+
+    def test_roi_section_sums_pnl_and_warns_on_small_sample(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res())
+            predict.record_result(path, "A-B", "2-1")
+            text, _ = predict.build_calibration_report(path)
+            n, staked, pnl = predict.roi_summary(json.loads(path.read_text()))
+        self.assertEqual(n, 1)
+        self.assertGreater(pnl, 0)
+        self.assertAlmostEqual(staked, predict.kelly_stake(0.55, 2.20), places=6)
+        self.assertIn("## ROI réel (mise Kelly théorique)", text)
+        self.assertIn("théorique", text)
+        self.assertIn("échantillon insuffisant", text)
+
+    def test_roi_section_without_any_bet(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res(), no_stake=True)
+            predict.record_result(path, "A-B", "2-1")
+            text, _ = predict.build_calibration_report(path)
+        self.assertIn("Aucun pari réglé", text)
+
+    def test_large_sample_drops_the_warning(self):
+        entries = []
+        for i in range(predict.ROI_MIN_BETS):
+            entries.append({
+                "match": f"A{i}-B{i}", "date": "2026-08-15", "competition": "E0",
+                "probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                "predicted_score": "2-1",
+                "bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                          "realized_pct": 0.012 if i % 2 else -0.01}],
+                "actual_score": "2-1", "actual_ht": None, "meta": {"model": "M5"}})
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps(entries))
+            text, _ = predict.build_calibration_report(path)
+        self.assertNotIn("échantillon insuffisant", text)
+        self.assertIn(f"{predict.ROI_MIN_BETS} pari(s) réglé(s)", text)
+
+
 class TestRps(unittest.TestCase):
     def test_perfect_prediction_zero_rps(self):
         self.assertAlmostEqual(predict.rps((1.0, 0.0, 0.0), 0), 0.0)

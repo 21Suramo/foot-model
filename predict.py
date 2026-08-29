@@ -411,7 +411,25 @@ def save_journal(path, entries):
     p.write_text(json.dumps(entries, ensure_ascii=False, indent=2))
 
 
-def log_prediction(path, res):
+def prediction_bets(res, no_stake=False):
+    """Paris théoriques d'une prédiction : une entrée par issue dont la mise
+    Kelly est strictement positive, aux cotes effectivement utilisées.
+
+    Purement descriptif — c'est la trace de ce que la section 💰 a affiché, pour
+    pouvoir en mesurer le P&L a posteriori. Aucune mise n'est placée et rien
+    ici ne décide de parier : la décision reste humaine."""
+    if no_stake or not res.get("best_odds"):
+        return []
+    bets = []
+    for issue in ISSUES:
+        odds = float(res["best_odds"][issue])
+        stake = kelly_stake(res["final"][issue], odds)
+        if stake > 0:
+            bets.append({"issue": issue, "odds": odds, "stake_pct": round(stake, 6)})
+    return bets
+
+
+def log_prediction(path, res, no_stake=False):
     """Journalise (ou met à jour) la prédiction. Idempotent : un ré-run du même
     match/date écrase l'entrée non réglée au lieu d'en créer une seconde."""
     entries = load_journal(path)
@@ -422,7 +440,8 @@ def log_prediction(path, res):
         "probs": res["final"],
         "market_probs": res["market"],
         "predicted_score": best_score_for_outcome(res["grid"], max(res["final"], key=res["final"].get)),
-        "bets": [], "actual_score": None, "actual_ht": None,
+        "bets": prediction_bets(res, no_stake),
+        "actual_score": None, "actual_ht": None,
         "meta": {"model": "M5", "home": res["home"], "away": res["away"],
                  "lambda_home": round(res["lam_h"], 3),
                  "lambda_away": round(res["lam_a"], 3),
@@ -440,9 +459,19 @@ def log_prediction(path, res):
 
 
 def settle_entry(entry, actual, actual_ht=None):
-    """Pose le résultat réel sur une entrée du journal."""
+    """Pose le résultat réel sur une entrée et règle ses paris théoriques.
+
+    Un pari déjà réglé (champ `realized_pct` présent) n'est jamais recalculé —
+    le P&L d'un match est figé une fois posé."""
     entry["actual_score"] = actual
     entry["actual_ht"] = actual_ht
+    winner = ISSUES[_outcome_index_score(actual)]
+    for bet in entry.get("bets") or []:
+        if "realized_pct" in bet:
+            continue
+        stake, odds = float(bet["stake_pct"]), float(bet["odds"])
+        gain = stake * (odds - 1.0) if bet["issue"] == winner else -stake
+        bet["realized_pct"] = round(gain, 6)
     return entry
 
 
@@ -704,6 +733,49 @@ def freshness_section(settled):
     return lines
 
 
+# --- ROI réalisé des mises Kelly théoriques --------------------------------
+
+ROI_MIN_BETS = 100   # sous ce seuil, la variance des cotes 1N2 rend le ROI non informatif
+
+
+def roi_summary(settled):
+    """(nb_paris_réglés, mise_totale, p_and_l) en fractions de bankroll."""
+    n = 0
+    staked = pnl = 0.0
+    for e in settled:
+        for b in e.get("bets") or []:
+            if "realized_pct" not in b:
+                continue
+            n += 1
+            staked += float(b["stake_pct"])
+            pnl += float(b["realized_pct"])
+    return n, staked, pnl
+
+
+def roi_section(settled):
+    """Lignes markdown de la section « ROI réel (mise Kelly théorique) »."""
+    n, staked, pnl = roi_summary(settled)
+    lines = ["## ROI réel (mise Kelly théorique)", ""]
+    if not n:
+        lines += ["Aucun pari réglé sur la période : soit les prédictions n'avaient "
+                  "pas de cote exploitable, soit leurs résultats ne sont pas encore "
+                  "synchronisés (`python predict.py sync-results`).", ""]
+        return lines
+    lines += [f"- {n} pari(s) réglé(s) — mise cumulée {staked:.2%} de bankroll "
+              f"(somme des mises successives, pas une exposition simultanée), "
+              f"P&L {pnl:+.3%} de bankroll"
+              + (f", soit un ROI de {pnl / staked:+.1%} de la mise." if staked else "."),
+              "- Ce ROI est **théorique** : les mises n'ont jamais été placées, elles "
+              "sont recalculées depuis les cotes journalisées (Kelly 0.25 plafonné à "
+              "5 %). Ce n'est pas un P&L vérifié par un bookmaker."]
+    if n < ROI_MIN_BETS:
+        lines.append(f"- ⚠ {n} paris réglés (< {ROI_MIN_BETS}) : échantillon insuffisant "
+                     f"pour une lecture fiable du ROI — la variance sur des cotes 1N2 "
+                     f"rend un tel échantillon quasi non-informatif.")
+    lines.append("")
+    return lines
+
+
 def build_calibration_report(path, month_filter=None):
     settled = [e for e in load_journal(path) if e.get("actual_score")]
     if month_filter:
@@ -739,6 +811,7 @@ def build_calibration_report(path, month_filter=None):
     lines.append("")
 
     lines += freshness_section(settled)
+    lines += roi_section(settled)
 
     # Focus sur le dernier mois (ou le mois filtré)
     focus = month_filter or sorted(by_month)[-1]
@@ -884,7 +957,7 @@ def cmd_match(args, conn):
                             args.blend, fit_cache)
         print_prediction(res, cfg, contest, args.contest_exact_bonus, args.no_stake)
         if not args.no_log:
-            log_prediction(args.log, res)
+            log_prediction(args.log, res, args.no_stake)
     if not args.no_log:
         print(f"\n{len(fixtures)} prédiction(s) journalisée(s) dans {args.log}.")
 
