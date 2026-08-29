@@ -16,7 +16,9 @@ EXPECTED = {}
 for _s in footballdata.SEASONS:
     EXPECTED[("E0", _s)] = 380
     EXPECTED[("SP1", _s)] = 380
-    EXPECTED[("F1", _s)] = 306 if _s in ("2324", "2425", "2526") else 380
+    # Ligue 1 à 18 clubs à partir de 2023-24 : comparaison de seuil, pas une liste
+    # à rallonger chaque été (c'est exactement ce qui a bloqué la saison 2026-27).
+    EXPECTED[("F1", _s)] = 306 if _s >= "2324" else 380
 EXPECTED[("F1", "1920")] = 279
 
 CLOSING_SOURCES = ("pinnacle_close", "avg_close")
