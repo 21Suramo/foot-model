@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import inspect
 import io
 import json
 import sys
@@ -85,6 +86,33 @@ class TestFreshnessBridge(unittest.TestCase):
         self.assertFalse(predict.margin_ok((1.5, 3.0, 3.0))[0])      # marge > 112 %
 
 
+class TestRiskParameters(unittest.TestCase):
+    def test_risk_parameters_are_intentional(self):
+        """Ce test échoue volontairement si ces constantes changent — c'est un
+        garde-fou, pas un bug. Une modification de ces valeurs doit être
+        délibérée et accompagnée d'une mise à jour de CLAUDE.md, jamais un
+        changement silencieux."""
+        sig = inspect.signature(predict.kelly_stake)
+        self.assertEqual(sig.parameters["fraction"].default, 0.25,
+                         "kelly_stake fraction : Kelly quart, valeur documentée")
+        self.assertEqual(sig.parameters["cap"].default, 0.05,
+                         "kelly_stake cap : plafond 5 % de bankroll, valeur documentée")
+        self.assertEqual(predict.DEFAULT_BLEND, 0.92,
+                         "poids marché de base : 92 % à J-1, barème validé par "
+                         "backtest_blend.py")
+        self.assertEqual(predict.STALE_FLOOR, 0.28,
+                         "plancher de poids marché : 28 % à partir de J-5, barème "
+                         "validé par backtest_blend.py")
+        self.assertEqual(predict.FRESH_MAX_DAYS, 1,
+                         "seuil de cotes fraîches : J-1, borne du barème documenté")
+        self.assertEqual(predict.STALE_MIN_DAYS, 5,
+                         "seuil de cotes périmées : J-5, borne du barème documenté")
+        # le défaut du CLI doit rester branché sur la constante, pas figé à part
+        default_blend = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "A", "--away", "B"]).blend
+        self.assertEqual(default_blend, predict.DEFAULT_BLEND)
+
+
 class TestMarketConsensus(unittest.TestCase):
     def test_consensus_demargined_sums_to_one_and_best_odds(self):
         market, best = predict.market_consensus([(1.85, 3.6, 4.4), (1.90, 3.5, 4.3)])
@@ -159,6 +187,321 @@ class TestJournal(unittest.TestCase):
             self.assertEqual(overall["issue_rate"], 1.0)
             self.assertIsNotNone(overall["brier_market"])
             self.assertIn("2026-08", text)
+
+
+class TestSyncResults(unittest.TestCase):
+    """Fermeture automatique de la boucle : journal <- football.db."""
+
+    def _db(self):
+        conn = db.connect(":memory:")
+        # match connu de la source, avec mi-temps
+        db.upsert_match(conn, {"date": "2026-08-22", "league": "E0", "season": "2627",
+                               "home": "Arsenal", "away": "Chelsea",
+                               "fthg": 2, "ftag": 1, "hthg": 1, "htag": 0})
+        # match connu sans mi-temps renseignée
+        db.upsert_match(conn, {"date": "2026-08-23", "league": "E0", "season": "2627",
+                               "home": "Everton", "away": "Crystal Palace",
+                               "fthg": 0, "ftag": 0})
+        # affiche programmée mais pas encore jouée côté source (score NULL)
+        db.upsert_match(conn, {"date": "2026-08-24", "league": "E0", "season": "2627",
+                               "home": "Leeds", "away": "Fulham"})
+        db.upsert_alias(conn, "Crystal Palace FC", "Crystal Palace")
+        conn.commit()
+        return conn
+
+    def _journal(self, d):
+        path = Path(d) / "j.json"
+        entries = [
+            {"match": "Arsenal-Chelsea", "date": "2026-08-22", "competition": "E0",
+             "probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
+             "predicted_score": "2-1", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+            {"match": "Everton-Crystal Palace", "date": "2026-08-23", "competition": "E0",
+             "probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+             "predicted_score": "1-1", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+            # match passé absent de la source (retard football-data)
+            {"match": "Hull-Man United", "date": "2026-08-21", "competition": "E0",
+             "probs": {"home": 0.2, "draw": 0.2, "away": 0.6},
+             "predicted_score": "1-2", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+            # match à venir : ni synchronisé ni en attente
+            {"match": "Leeds-Fulham", "date": "2026-09-05", "competition": "E0",
+             "probs": {"home": 0.35, "draw": 0.3, "away": 0.35},
+             "predicted_score": "1-1", "bets": [], "actual_score": None, "actual_ht": None,
+             "meta": {"model": "M5"}},
+        ]
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_sync_fills_known_and_flags_missing(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            synced, pending = predict.sync_results(conn, path,
+                                                   as_of=datetime.date(2026, 8, 30))
+            self.assertEqual([s["match"] for s in synced],
+                             ["Arsenal-Chelsea", "Everton-Crystal Palace"])
+            self.assertEqual([p["match"] for p in pending], ["Hull-Man United"])
+            entries = {e["match"]: e for e in json.loads(path.read_text())}
+            self.assertEqual(entries["Arsenal-Chelsea"]["actual_score"], "2-1")
+            self.assertEqual(entries["Arsenal-Chelsea"]["actual_ht"], "1-0")
+            self.assertEqual(entries["Everton-Crystal Palace"]["actual_score"], "0-0")
+            self.assertIsNone(entries["Everton-Crystal Palace"]["actual_ht"])
+            # jamais de score inventé pour l'absent, ni pour le match à venir
+            self.assertIsNone(entries["Hull-Man United"]["actual_score"])
+            self.assertIsNone(entries["Leeds-Fulham"]["actual_score"])
+        conn.close()
+
+    def test_future_match_is_not_pending(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            _, pending = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            self.assertNotIn("Leeds-Fulham", [p["match"] for p in pending])
+        conn.close()
+
+    def test_scheduled_but_unplayed_stays_pending(self):
+        """Une ligne en base sans score (fthg NULL) n'est pas un résultat."""
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Fulham", "date": "2026-08-24", "competition": "E0",
+                 "probs": {"home": 0.35, "draw": 0.3, "away": 0.35},
+                 "predicted_score": "1-1", "bets": [], "actual_score": None,
+                 "actual_ht": None, "meta": {"model": "M5"}}]))
+            synced, pending = predict.sync_results(conn, path,
+                                                   as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(synced, [])
+            self.assertEqual(len(pending), 1)
+            self.assertIsNone(json.loads(path.read_text())[0]["actual_score"])
+        conn.close()
+
+    def test_sync_is_idempotent_and_reports_shift(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            # date prévue samedi, match joué le dimanche : tolérance de calendrier
+            path.write_text(json.dumps([
+                {"match": "Arsenal-Chelsea", "date": "2026-08-21", "competition": "E0",
+                 "probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
+                 "predicted_score": "2-1", "bets": [], "actual_score": None,
+                 "actual_ht": None, "meta": {"model": "M5"}}]))
+            synced, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(synced[0]["shift"], 1)
+            # deuxième passage : plus rien à faire
+            synced2, pending2 = predict.sync_results(conn, path,
+                                                     as_of=datetime.date(2026, 8, 30))
+            self.assertEqual((synced2, pending2), ([], []))
+        conn.close()
+
+    def test_teams_resolved_via_meta_and_alias(self):
+        conn = self._db()
+        teams = predict.league_teams(conn, "E0")
+        aliases = db.load_aliases(conn)
+        self.assertEqual(predict.split_match_key("Everton-Crystal Palace", teams, aliases),
+                         ("Everton", "Crystal Palace"))
+        entry = {"match": "peu importe", "meta": {"home": "Arsenal", "away": "Chelsea"}}
+        self.assertEqual(predict.entry_teams(entry, teams, aliases), ("Arsenal", "Chelsea"))
+        conn.close()
+
+    def test_unresolvable_match_key_stays_pending(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Zzz Unknown-Yyy Unknown", "date": "2026-08-22",
+                 "competition": "E0", "probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
+                 "predicted_score": "1-1", "bets": [], "actual_score": None,
+                 "actual_ht": None, "meta": {"model": "M5"}}]))
+            synced, pending = predict.sync_results(conn, path,
+                                                   as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(synced, [])
+            self.assertIn("non résolues", pending[0]["reason"])
+        conn.close()
+
+
+class TestFreshnessSection(unittest.TestCase):
+    """Le rapport doit distinguer cotes fraîches et cotes périmées."""
+
+    def _entry(self, i, age, actual="2-1", probs=None, market=None):
+        return {
+            "match": f"A{i}-B{i}", "date": "2026-08-15", "competition": "E0",
+            "probs": probs or {"home": 0.55, "draw": 0.25, "away": 0.20},
+            "market_probs": market or {"home": 0.50, "draw": 0.27, "away": 0.23},
+            "predicted_score": "2-1", "bets": [],
+            "actual_score": actual, "actual_ht": None,
+            "meta": {"model": "M5", "odds_age_days": age},
+        }
+
+    def _journal(self, d, entries):
+        path = Path(d) / "j.json"
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_three_buckets_counted(self):
+        entries = ([self._entry(i, 0) for i in range(4)]        # fraîches (0 et 1 j)
+                   + [self._entry(10 + i, 1) for i in range(3)]
+                   + [self._entry(20 + i, 3) for i in range(5)]  # intermédiaires
+                   + [self._entry(30 + i, 6) for i in range(2)])  # périmées
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertIn("## Par fraîcheur des cotes", text)
+        labels = predict.bucket_labels()
+        rows = {line.split("|")[1].strip(): line.split("|")[2].strip()
+                for line in text.splitlines() if line.startswith("| ")}
+        self.assertEqual(rows[labels["fraiches"]], "7")
+        self.assertEqual(rows[labels["intermediaires"]], "5")
+        self.assertEqual(rows[labels["perimees"]], "2")
+
+    def test_bucket_boundaries_follow_market_weight_thresholds(self):
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.FRESH_MAX_DAYS)),
+                         "fraiches")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.FRESH_MAX_DAYS + 1)),
+                         "intermediaires")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.STALE_MIN_DAYS - 1)),
+                         "intermediaires")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, predict.STALE_MIN_DAYS)),
+                         "perimees")
+        self.assertEqual(predict.freshness_bucket(self._entry(0, None)), "inconnue")
+
+    def test_small_bucket_shows_count_but_no_delta(self):
+        entries = [self._entry(i, 7) for i in range(3)]
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        row = next(l for l in text.splitlines()
+                   if l.startswith("| " + predict.bucket_labels()["perimees"]))
+        self.assertEqual(row.split("|")[2].strip(), "3")
+        self.assertEqual(row.split("|")[5].strip(), "—")       # aucun delta
+        self.assertIn("indicative", row.split("|")[6])
+
+    def test_alert_when_stale_bucket_underperforms(self):
+        # fraîches : FINAL ~= marché ; périmées : FINAL nettement pire que le marché
+        good = {"home": 0.55, "draw": 0.25, "away": 0.20}
+        mkt = {"home": 0.55, "draw": 0.25, "away": 0.20}
+        bad = {"home": 0.25, "draw": 0.25, "away": 0.50}
+        entries = ([self._entry(i, 1, probs=good, market=mkt) for i in range(20)]
+                   + [self._entry(50 + i, 6, probs=bad, market=mkt) for i in range(20)])
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertIn("Les cotes périmées performent moins bien que prévu par le "
+                      "backtest", text)
+
+    def test_no_alert_when_stale_bucket_holds(self):
+        same = {"home": 0.55, "draw": 0.25, "away": 0.20}
+        mkt = {"home": 0.54, "draw": 0.26, "away": 0.20}
+        entries = ([self._entry(i, 1, probs=same, market=mkt) for i in range(20)]
+                   + [self._entry(50 + i, 6, probs=same, market=mkt) for i in range(20)])
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertNotIn("mérite d'être revu", text)
+        self.assertIn("le barème tient", text)
+
+    def test_unknown_freshness_is_not_counted_as_fresh(self):
+        entries = [self._entry(i, None) for i in range(3)] + [self._entry(9, 1)]
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        labels = predict.bucket_labels()
+        rows = {line.split("|")[1].strip(): line.split("|")[2].strip()
+                for line in text.splitlines() if line.startswith("| ")}
+        self.assertEqual(rows[labels["inconnue"]], "3")
+        self.assertEqual(rows[labels["fraiches"]], "1")
+
+
+class TestBetsAndRoi(unittest.TestCase):
+    """Le journal doit garder la trace des mises Kelly pour mesurer un P&L."""
+
+    def _res(self, home="A", away="B", date="2026-08-15", final=None, best_odds=None):
+        return {
+            "league": "E0", "home": home, "away": away,
+            "date": datetime.date.fromisoformat(date),
+            "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+            "final": final or {"home": 0.55, "draw": 0.25, "away": 0.20},
+            "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+            "best_odds": best_odds or {"home": 2.20, "draw": 3.60, "away": 4.40},
+            "grid": {(1, 0): 0.3, (1, 1): 0.25, (0, 1): 0.2, (2, 1): 0.25},
+        }
+
+    def test_bets_persisted_with_odds_and_stake(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res())
+            bets = json.loads(path.read_text())[0]["bets"]
+            self.assertEqual([b["issue"] for b in bets], ["home"])  # seule issue en value
+            self.assertEqual(bets[0]["odds"], 2.20)
+            self.assertAlmostEqual(bets[0]["stake_pct"],
+                                   predict.kelly_stake(0.55, 2.20), places=6)
+
+    def test_no_stake_leaves_bets_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res(), no_stake=True)
+            self.assertEqual(json.loads(path.read_text())[0]["bets"], [])
+
+    def test_no_odds_no_bets(self):
+        res = self._res()
+        res["best_odds"] = None
+        self.assertEqual(predict.prediction_bets(res), [])
+
+    def test_bet_settled_as_win_and_loss(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res())            # pari sur 'home'
+            predict.log_prediction(path, self._res(home="C", away="D"))
+            predict.record_result(path, "A-B", "2-1")            # issue home : gagné
+            predict.record_result(path, "C-D", "0-1")            # issue away : perdu
+            entries = {e["match"]: e for e in json.loads(path.read_text())}
+            won = entries["A-B"]["bets"][0]
+            lost = entries["C-D"]["bets"][0]
+            self.assertAlmostEqual(won["realized_pct"], won["stake_pct"] * (2.20 - 1.0),
+                                   places=6)
+            self.assertAlmostEqual(lost["realized_pct"], -lost["stake_pct"], places=6)
+
+    def test_settled_bet_never_recomputed(self):
+        entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                           "realized_pct": 0.012}]}
+        predict.settle_entry(entry, "0-3")   # issue away : recalculer donnerait -0.01
+        self.assertEqual(entry["bets"][0]["realized_pct"], 0.012)
+
+    def test_roi_section_sums_pnl_and_warns_on_small_sample(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res())
+            predict.record_result(path, "A-B", "2-1")
+            text, _ = predict.build_calibration_report(path)
+            n, staked, pnl = predict.roi_summary(json.loads(path.read_text()))
+        self.assertEqual(n, 1)
+        self.assertGreater(pnl, 0)
+        self.assertAlmostEqual(staked, predict.kelly_stake(0.55, 2.20), places=6)
+        self.assertIn("## ROI réel (mise Kelly théorique)", text)
+        self.assertIn("théorique", text)
+        self.assertIn("échantillon insuffisant", text)
+
+    def test_roi_section_without_any_bet(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res(), no_stake=True)
+            predict.record_result(path, "A-B", "2-1")
+            text, _ = predict.build_calibration_report(path)
+        self.assertIn("Aucun pari réglé", text)
+
+    def test_large_sample_drops_the_warning(self):
+        entries = []
+        for i in range(predict.ROI_MIN_BETS):
+            entries.append({
+                "match": f"A{i}-B{i}", "date": "2026-08-15", "competition": "E0",
+                "probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                "predicted_score": "2-1",
+                "bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                          "realized_pct": 0.012 if i % 2 else -0.01}],
+                "actual_score": "2-1", "actual_ht": None, "meta": {"model": "M5"}})
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps(entries))
+            text, _ = predict.build_calibration_report(path)
+        self.assertNotIn("échantillon insuffisant", text)
+        self.assertIn(f"{predict.ROI_MIN_BETS} pari(s) réglé(s)", text)
 
 
 class TestRps(unittest.TestCase):

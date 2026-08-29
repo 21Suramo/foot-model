@@ -34,6 +34,17 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   (`data/production_journal.json`, format `track.py`) et rapport de calibration
   mensuel (`reports/production_calibration.md`) : le monitoring continue en
   conditions réelles.
+- **M5.1 — fiabilisation du monitoring : implémenté.** Le journal de production
+  n'avait aucun résultat réel (`actual_score` null partout) : la boucle ne se
+  refermait pas. `predict.py sync-results` va chercher les scores dans
+  `football.db` sans saisie manuelle ; le rapport découpe la performance **par
+  fraîcheur des cotes** (fraîches / intermédiaires / périmées, seuils de
+  `market_weight`) au lieu de tout agréger par mois ; les mises Kelly sont
+  persistées dans `bets` et réglées en `realized_pct` pour un **ROI théorique**
+  a posteriori. Les paramètres de risque (fraction et plafond Kelly, base et
+  plancher du poids marché) sont verrouillés par
+  `tests/test_predict.py::TestRiskParameters::test_risk_parameters_are_intentional` :
+  les changer fait échouer un test, exprès.
 
 ## Commandes
 
@@ -49,6 +60,7 @@ python report35.py                   # rapport -> reports/m35_backtest.md
 python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --odds 1.85,3.6,4.4 --odds-date 2026-08-14   # prédiction production (M5)
 python predict.py result --match "Arsenal-Chelsea" --actual 2-1   # enregistre un résultat
+python pipeline.py --update && python predict.py sync-results  # résultats réels depuis football.db
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python -m unittest discover -s tests # tests unitaires
@@ -84,7 +96,14 @@ python -m unittest discover -s tests # tests unitaires
   (fichier ou `-`/stdin) lit l'export `football-match-predictor.skill-export/v1`
   et le mappe sur les arguments (`league/home/away/odds_1x2/match_date/odds_date`) —
   sortie identique au passage manuel ; `ou` et `final_probs_1x2` ignorés,
-  `league` hors {E0,SP1,F1} → erreur.
+  `league` hors {E0,SP1,F1} → erreur. Sous-commande `sync-results` : remplit
+  `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
+  après résolution d'alias, tolérance ±2 jours sur la date (report de
+  calendrier) ; ce qui reste introuvable est listé « en attente de données
+  source » et jamais deviné. Le rapport ajoute une section par fraîcheur des
+  cotes (alerte si le bucket périmées dérive de plus de 2 points vs le bucket
+  fraîches, n ≥ 15 requis dans les deux) et une section ROI théorique
+  (avertissement sous 100 paris réglés).
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
@@ -98,6 +117,30 @@ python -m unittest discover -s tests # tests unitaires
   peut pas simuler — ne pas conclure « le modèle ne sert à rien ».
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2025-26.
+
+## Routine de suivi (à partir de M5.1)
+
+- **Chaque lundi** (génération des prédictions de la semaine, déjà en
+  place) : `python predict.py match --fixture ...` pour E0/SP1/F1.
+- **Chaque lundi suivant** (avant de regénérer les prédictions de la
+  semaine d'après) : `python pipeline.py --update` puis
+  `python predict.py sync-results` pour clore les matchs de la semaine
+  précédente. Vérifier le résumé "en attente de données source" — s'il
+  grossit, creuser la source (football-data.co.uk en retard, alias manquant).
+- **1er de chaque mois** : `python predict.py report`, committer
+  reports/production_calibration.md, comparer le delta vs marché du mois
+  au chiffre du backtest (+1,78 %). Si le delta réel est significativement
+  pire (n ≥ 15) sur plusieurs mois consécutifs, ouvrir une entrée dans ce
+  fichier documentant l'écart et son investigation — ne pas re-régler les
+  hyperparamètres figés sur la base du monitoring de production seul (ce
+  serait re-tuner sur ce qui devrait rester un test).
+- **Trimestriel** : relire la section "Par fraîcheur des cotes" cumulée
+  sur le trimestre. Le poids marché sur cotes périmées (base 92 % →
+  plancher 28 %) ne doit être révisé qu'après un trimestre complet avec
+  n ≥ 15 sur le bucket périmées, jamais sur un aperçu partiel.
+- **Avant toute augmentation du plafond Kelly ou de la fraction** :
+  exiger au minimum 100 paris réglés dans le ROI réel avec un ROI positif
+  net de la marge — sinon rester sur les valeurs actuelles.
 
 ## Conventions
 

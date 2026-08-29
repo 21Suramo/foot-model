@@ -24,6 +24,7 @@ Usage :
         [--date 2026-08-15] [--odds 1.85,3.6,4.4 --odds 1.88,3.55,4.3] \
         [--odds-date 2026-08-14] [--contest-points 13,50,68]
     python predict.py result --match "Arsenal-Chelsea" --actual 2-1 [--ht 1-0]
+    python pipeline.py --update && python predict.py sync-results
     python predict.py report [--month 2026-08]
 """
 import argparse
@@ -410,7 +411,25 @@ def save_journal(path, entries):
     p.write_text(json.dumps(entries, ensure_ascii=False, indent=2))
 
 
-def log_prediction(path, res):
+def prediction_bets(res, no_stake=False):
+    """Paris théoriques d'une prédiction : une entrée par issue dont la mise
+    Kelly est strictement positive, aux cotes effectivement utilisées.
+
+    Purement descriptif — c'est la trace de ce que la section 💰 a affiché, pour
+    pouvoir en mesurer le P&L a posteriori. Aucune mise n'est placée et rien
+    ici ne décide de parier : la décision reste humaine."""
+    if no_stake or not res.get("best_odds"):
+        return []
+    bets = []
+    for issue in ISSUES:
+        odds = float(res["best_odds"][issue])
+        stake = kelly_stake(res["final"][issue], odds)
+        if stake > 0:
+            bets.append({"issue": issue, "odds": odds, "stake_pct": round(stake, 6)})
+    return bets
+
+
+def log_prediction(path, res, no_stake=False):
     """Journalise (ou met à jour) la prédiction. Idempotent : un ré-run du même
     match/date écrase l'entrée non réglée au lieu d'en créer une seconde."""
     entries = load_journal(path)
@@ -421,8 +440,10 @@ def log_prediction(path, res):
         "probs": res["final"],
         "market_probs": res["market"],
         "predicted_score": best_score_for_outcome(res["grid"], max(res["final"], key=res["final"].get)),
-        "bets": [], "actual_score": None, "actual_ht": None,
-        "meta": {"model": "M5", "lambda_home": round(res["lam_h"], 3),
+        "bets": prediction_bets(res, no_stake),
+        "actual_score": None, "actual_ht": None,
+        "meta": {"model": "M5", "home": res["home"], "away": res["away"],
+                 "lambda_home": round(res["lam_h"], 3),
                  "lambda_away": round(res["lam_a"], 3),
                  "market_weight": round(res["market_weight"], 3),
                  "odds_age_days": res["odds_age_days"]},
@@ -437,15 +458,139 @@ def log_prediction(path, res):
     return entry
 
 
+def settle_entry(entry, actual, actual_ht=None):
+    """Pose le résultat réel sur une entrée et règle ses paris théoriques.
+
+    Un pari déjà réglé (champ `realized_pct` présent) n'est jamais recalculé —
+    le P&L d'un match est figé une fois posé."""
+    entry["actual_score"] = actual
+    entry["actual_ht"] = actual_ht
+    winner = ISSUES[_outcome_index_score(actual)]
+    for bet in entry.get("bets") or []:
+        if "realized_pct" in bet:
+            continue
+        stake, odds = float(bet["stake_pct"]), float(bet["odds"])
+        gain = stake * (odds - 1.0) if bet["issue"] == winner else -stake
+        bet["realized_pct"] = round(gain, 6)
+    return entry
+
+
 def record_result(path, match, actual, actual_ht=None):
     entries = load_journal(path)
     for e in reversed(entries):
         if e["match"].lower() == match.lower() and e.get("actual_score") is None:
-            e["actual_score"] = actual
-            e["actual_ht"] = actual_ht
+            settle_entry(e, actual, actual_ht)
             save_journal(path, entries)
             return e
     sys.exit(f"Aucune prédiction non réglée pour '{match}' dans {path}.")
+
+
+# ---------------------------------------------------------------------------
+# Synchronisation des résultats depuis football.db (fermeture de la boucle)
+#
+# `result` demande une commande manuelle par match — en pratique le journal
+# reste vide et le monitoring ne mesure rien. `sync-results` va chercher les
+# scores dans la base déjà alimentée par pipeline.py --update. Règle absolue :
+# on ne remplit que ce que la source contient, jamais un score deviné.
+# ---------------------------------------------------------------------------
+
+SYNC_TOLERANCE_DAYS = 2   # report de calendrier toléré (même convention que xgjoin)
+
+
+def league_teams(conn, league):
+    """Noms canoniques des équipes vues dans la base pour cette ligue."""
+    if not league:
+        return []
+    rows = conn.execute(
+        "SELECT DISTINCT home AS t FROM matches WHERE league = ? "
+        "UNION SELECT DISTINCT away AS t FROM matches WHERE league = ?",
+        (league, league))
+    return [r["t"] for r in rows]
+
+
+def split_match_key(match, teams, alias_map):
+    """'Domicile-Extérieur' -> (domicile, extérieur) canoniques, ou None.
+
+    Un nom d'équipe peut contenir un tiret : on essaie chaque coupure et on ne
+    retient que celles dont les DEUX moitiés se résolvent. Si zéro ou plusieurs
+    coupures conviennent, on renvoie None — mieux vaut laisser l'entrée en
+    attente que de régler le mauvais match."""
+    cands = []
+    for i, ch in enumerate(match):
+        if ch != "-" or i == 0 or i == len(match) - 1:
+            continue
+        home, home_ok = resolve_team(match[:i], teams, alias_map)
+        away, away_ok = resolve_team(match[i + 1:], teams, alias_map)
+        if home_ok and away_ok and home != away:
+            cands.append((home, away))
+    return cands[0] if len(cands) == 1 else None
+
+
+def entry_teams(entry, teams, alias_map):
+    """(domicile, extérieur) d'une entrée : depuis meta si présent (entrées
+    récentes), sinon en redécoupant la clé 'match' (entrées historiques)."""
+    meta = entry.get("meta") or {}
+    if meta.get("home") and meta.get("away"):
+        return meta["home"], meta["away"]
+    return split_match_key(entry["match"], teams, alias_map)
+
+
+def find_actual_result(conn, league, home, away, date_iso, tolerance=SYNC_TOLERANCE_DAYS):
+    """(ligne, décalage_en_jours) du match joué correspondant, ou (None, None).
+
+    Fenêtre de ±tolerance jours autour de la date prévue : un match reporté
+    garde le même couple d'équipes, et deux fois la même affiche en 5 jours
+    n'existe pas. Une ligne sans score (fthg NULL) n'est jamais renvoyée."""
+    target = datetime.date.fromisoformat(date_iso)
+    lo = (target - datetime.timedelta(days=tolerance)).isoformat()
+    hi = (target + datetime.timedelta(days=tolerance)).isoformat()
+    rows = conn.execute(
+        "SELECT date, fthg, ftag, hthg, htag FROM matches "
+        "WHERE league = ? AND home = ? AND away = ? AND fthg IS NOT NULL "
+        "AND ftag IS NOT NULL AND date BETWEEN ? AND ?",
+        (league, home, away, lo, hi)).fetchall()
+    if not rows:
+        return None, None
+    shift = lambda r: (datetime.date.fromisoformat(r["date"]) - target).days
+    best = min(rows, key=lambda r: abs(shift(r)))
+    return best, shift(best)
+
+
+def sync_results(conn, path, as_of=None):
+    """Remplit actual_score des matchs passés depuis football.db.
+
+    Renvoie (synchronisés, en_attente). Un match passé absent de la base (source
+    en retard, alias manquant) reste `null` et ressort en attente : on n'invente
+    jamais un score. Suppose que `pipeline.py --update` a déjà tourné."""
+    as_of = as_of or datetime.date.today()
+    entries = load_journal(path)
+    alias_map = db.load_aliases(conn)
+    teams_cache = {}
+    synced, pending = [], []
+    for e in entries:
+        if e.get("actual_score") is not None or e["date"] >= as_of.isoformat():
+            continue
+        league = e.get("competition")
+        if league not in teams_cache:
+            teams_cache[league] = league_teams(conn, league)
+        pair = entry_teams(e, teams_cache[league], alias_map)
+        if pair is None:
+            pending.append({"match": e["match"], "date": e["date"],
+                            "reason": "équipes non résolues (alias manquant ?)"})
+            continue
+        row, shift = find_actual_result(conn, league, pair[0], pair[1], e["date"])
+        if row is None:
+            pending.append({"match": e["match"], "date": e["date"],
+                            "reason": "absent de football.db (source en retard ?)"})
+            continue
+        actual_ht = (f"{row['hthg']}-{row['htag']}"
+                     if row["hthg"] is not None and row["htag"] is not None else None)
+        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht)
+        synced.append({"match": e["match"], "date": e["date"],
+                       "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift})
+    if synced:
+        save_journal(path, entries)
+    return synced, pending
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +638,144 @@ def month_metrics(entries):
     }
 
 
+# --- Découpage par fraîcheur des cotes ------------------------------------
+#
+# Le Brier global agrège des prédictions faites à 92 % de marché et d'autres à
+# 28 % : un bon chiffre d'ensemble peut masquer une sous-performance propre aux
+# cotes périmées. C'est précisément la zone que backtest_blend.py reconnaît ne
+# pas savoir simuler (son proxy sous-estime la péremption réelle), donc la seule
+# mesure possible est celle-ci, en production.
+
+BUCKET_MIN_N = 15         # sous ce seuil, lecture indicative et aucun delta
+STALE_ALERT_GAP_PTS = 2.0  # écart d'alerte, en points de la colonne « Δ vs marché »
+                           # (= (Brier − Brier marché) × 100, échelle de la table « Par mois »)
+
+BUCKET_ORDER = ("fraiches", "intermediaires", "perimees", "inconnue")
+
+
+def bucket_labels():
+    """Libellés des buckets, dérivés des seuils de market_weight() (pas de
+    duplication : si un seuil bouge, le rapport suit)."""
+    return {
+        "fraiches": f"Fraîches (≤ {FRESH_MAX_DAYS} j, poids marché {DEFAULT_BLEND:.0%})",
+        "intermediaires": f"Intermédiaires ({FRESH_MAX_DAYS + 1}–{STALE_MIN_DAYS - 1} j, "
+                          f"poids dégressif)",
+        "perimees": f"Périmées (≥ {STALE_MIN_DAYS} j, poids marché {STALE_FLOOR:.0%})",
+        "inconnue": "Fraîcheur non renseignée (hors barème)",
+    }
+
+
+def freshness_bucket(entry):
+    """Bucket de fraîcheur d'une entrée, aux seuils exacts de market_weight()."""
+    age = (entry.get("meta") or {}).get("odds_age_days")
+    if age is None:
+        return "inconnue"
+    if age <= FRESH_MAX_DAYS:
+        return "fraiches"
+    if age >= STALE_MIN_DAYS:
+        return "perimees"
+    return "intermediaires"
+
+
+def freshness_section(settled):
+    """Lignes markdown de la section « Par fraîcheur des cotes »."""
+    labels = bucket_labels()
+    by_bucket = {}
+    for e in settled:
+        by_bucket.setdefault(freshness_bucket(e), []).append(e)
+
+    lines = ["## Par fraîcheur des cotes", "",
+             f"Découpage sur `meta.odds_age_days` aux seuils du pont marché/modèle "
+             f"(`market_weight`) : ≤ {FRESH_MAX_DAYS} j = poids de base "
+             f"{DEFAULT_BLEND:.0%}, ≥ {STALE_MIN_DAYS} j = plancher {STALE_FLOOR:.0%}. "
+             f"Le Brier global mélange les deux régimes ; c'est ici que se voit une "
+             f"sous-performance propre aux cotes périmées.", "",
+             "| Fraîcheur | n | Brier | Brier marché | Δ vs marché | Lecture |",
+             "| --- | --- | --- | --- | --- | --- |"]
+    deltas = {}
+    for key in BUCKET_ORDER:
+        rows = by_bucket.get(key)
+        if not rows:
+            continue
+        m = month_metrics(rows)
+        bmkt = f"{m['brier_market']:.4f}" if m["brier_market"] is not None else "—"
+        if m["n"] < BUCKET_MIN_N:
+            delta, read = "—", f"indicative (n < {BUCKET_MIN_N})"
+        elif m["brier_market"] is None:
+            delta, read = "—", "aucune cote journalisée"
+        elif m["n_market"] < BUCKET_MIN_N:
+            delta, read = "—", f"indicative ({m['n_market']} match(s) avec cotes)"
+        else:
+            d = (m["brier"] - m["brier_market"]) * 100
+            deltas[key] = d
+            delta, read = f"{d:+.2f} %", "exploitable"
+        lines.append(f"| {labels[key]} | {m['n']} | {m['brier']:.4f} | {bmkt} | "
+                     f"{delta} | {read} |")
+    lines.append("")
+
+    stale, fresh = deltas.get("perimees"), deltas.get("fraiches")
+    if stale is not None and fresh is not None:
+        gap = stale - fresh
+        if gap > STALE_ALERT_GAP_PTS:
+            lines += [f"⚠ Les cotes périmées performent moins bien que prévu par le "
+                      f"backtest — le garde-fou mérite d'être revu.",
+                      "",
+                      f"  (Δ vs marché : {stale:+.2f} % sur cotes périmées contre "
+                      f"{fresh:+.2f} % sur cotes fraîches, soit {gap:+.2f} pts d'écart, "
+                      f"au-delà du seuil de {STALE_ALERT_GAP_PTS:.0f} pts. À relire sur un "
+                      f"trimestre complet avant de toucher au barème.)", ""]
+        else:
+            lines += [f"- Écart périmées − fraîches : {gap:+.2f} pt(s) de Δ vs marché "
+                      f"(seuil d'alerte {STALE_ALERT_GAP_PTS:.0f} pts) — le barème tient.", ""]
+    elif "perimees" in by_bucket:
+        lines += [f"- Comparaison périmées vs fraîches indisponible : il faut "
+                  f"n ≥ {BUCKET_MIN_N} avec cotes dans LES DEUX buckets.", ""]
+    return lines
+
+
+# --- ROI réalisé des mises Kelly théoriques --------------------------------
+
+ROI_MIN_BETS = 100   # sous ce seuil, la variance des cotes 1N2 rend le ROI non informatif
+
+
+def roi_summary(settled):
+    """(nb_paris_réglés, mise_totale, p_and_l) en fractions de bankroll."""
+    n = 0
+    staked = pnl = 0.0
+    for e in settled:
+        for b in e.get("bets") or []:
+            if "realized_pct" not in b:
+                continue
+            n += 1
+            staked += float(b["stake_pct"])
+            pnl += float(b["realized_pct"])
+    return n, staked, pnl
+
+
+def roi_section(settled):
+    """Lignes markdown de la section « ROI réel (mise Kelly théorique) »."""
+    n, staked, pnl = roi_summary(settled)
+    lines = ["## ROI réel (mise Kelly théorique)", ""]
+    if not n:
+        lines += ["Aucun pari réglé sur la période : soit les prédictions n'avaient "
+                  "pas de cote exploitable, soit leurs résultats ne sont pas encore "
+                  "synchronisés (`python predict.py sync-results`).", ""]
+        return lines
+    lines += [f"- {n} pari(s) réglé(s) — mise cumulée {staked:.2%} de bankroll "
+              f"(somme des mises successives, pas une exposition simultanée), "
+              f"P&L {pnl:+.3%} de bankroll"
+              + (f", soit un ROI de {pnl / staked:+.1%} de la mise." if staked else "."),
+              "- Ce ROI est **théorique** : les mises n'ont jamais été placées, elles "
+              "sont recalculées depuis les cotes journalisées (Kelly 0.25 plafonné à "
+              "5 %). Ce n'est pas un P&L vérifié par un bookmaker."]
+    if n < ROI_MIN_BETS:
+        lines.append(f"- ⚠ {n} paris réglés (< {ROI_MIN_BETS}) : échantillon insuffisant "
+                     f"pour une lecture fiable du ROI — la variance sur des cotes 1N2 "
+                     f"rend un tel échantillon quasi non-informatif.")
+    lines.append("")
+    return lines
+
+
 def build_calibration_report(path, month_filter=None):
     settled = [e for e in load_journal(path) if e.get("actual_score")]
     if month_filter:
@@ -526,6 +809,9 @@ def build_calibration_report(path, month_filter=None):
                  f"{overall['rps']:.4f} | {overall['issue_rate']:.0%} | "
                  f"{overall['exact_rate']:.0%} | {overall['draw_pred']:.0%} / {overall['draw_obs']:.0%} |")
     lines.append("")
+
+    lines += freshness_section(settled)
+    lines += roi_section(settled)
 
     # Focus sur le dernier mois (ou le mois filtré)
     focus = month_filter or sorted(by_month)[-1]
@@ -671,7 +957,7 @@ def cmd_match(args, conn):
                             args.blend, fit_cache)
         print_prediction(res, cfg, contest, args.contest_exact_bonus, args.no_stake)
         if not args.no_log:
-            log_prediction(args.log, res)
+            log_prediction(args.log, res, args.no_stake)
     if not args.no_log:
         print(f"\n{len(fixtures)} prédiction(s) journalisée(s) dans {args.log}.")
 
@@ -683,6 +969,21 @@ def cmd_result(args, conn):
     issue = "ISSUE OK" if pred_out == act_out else "issue ratée"
     exact = " + SCORE EXACT !" if e["predicted_score"] == args.actual else ""
     print(f"Résultat enregistré : {args.match} {args.actual} — {issue}{exact}")
+
+
+def cmd_sync_results(args, conn):
+    as_of = datetime.date.fromisoformat(args.as_of) if args.as_of else None
+    synced, pending = sync_results(conn, args.log, as_of)
+    for s in synced:
+        note = f"  (joué à {s['shift']:+d} j de la date prévue)" if s["shift"] else ""
+        print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}")
+    if pending:
+        print("\nEn attente de données source :")
+        for p in pending:
+            print(f"  ..  {p['date']}  {p['match']} — {p['reason']}")
+        print("  (relance `python pipeline.py --update` puis cette commande ; si "
+              "l'attente persiste, creuse la source football-data ou l'alias manquant.)")
+    print(f"\n{len(synced)} résultat(s) synchronisé(s), {len(pending)} encore en attente.")
 
 
 def cmd_report(args, conn):
@@ -734,6 +1035,14 @@ def build_parser():
     r.add_argument("--actual", required=True, help="Score réel, ex: 2-1")
     r.add_argument("--ht", default=None, help="Score mi-temps 'h-a' (optionnel)")
     r.set_defaults(func=cmd_result)
+
+    s = sub.add_parser("sync-results", parents=[common],
+                       help="remplir les résultats réels depuis football.db "
+                            "(après `pipeline.py --update`)")
+    s.add_argument("--as-of", default=None, metavar="YYYY-MM-DD",
+                   help="Date de référence : seuls les matchs antérieurs sont "
+                        "synchronisés (défaut : aujourd'hui)")
+    s.set_defaults(func=cmd_sync_results)
 
     rep = sub.add_parser("report", parents=[common], help="rapport de calibration mensuel du monitoring")
     rep.add_argument("--month", default=None, help="Filtrer sur un mois 'YYYY-MM'")
