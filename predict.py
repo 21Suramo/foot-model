@@ -611,6 +611,16 @@ def rps(probs, outcome):
     return ((probs[0] - o[0]) ** 2 + ((probs[0] + probs[1]) - (o[0] + o[1])) ** 2) / 2.0
 
 
+def relative_delta(brier, brier_market):
+    """Écart au marché en %, RELATIF — même formule que « Écart rel. marché »
+    dans report35.py : (Brier − Brier marché) / Brier marché × 100.
+
+    C'est la seule échelle directement comparable au +1,78 % du backtest M3.5,
+    que la routine de suivi mensuel demande de confronter au chiffre du mois.
+    L'écart absolu qui figurait ici valait ~1,75× moins sur les mêmes données."""
+    return (brier - brier_market) / brier_market * 100
+
+
 def month_metrics(entries):
     n = len(entries)
     b_final = b_mkt = rps_sum = 0.0
@@ -646,9 +656,16 @@ def month_metrics(entries):
 # pas savoir simuler (son proxy sous-estime la péremption réelle), donc la seule
 # mesure possible est celle-ci, en production.
 
-BUCKET_MIN_N = 15         # sous ce seuil, lecture indicative et aucun delta
-STALE_ALERT_GAP_PTS = 2.0  # écart d'alerte, en points de la colonne « Δ vs marché »
-                           # (= (Brier − Brier marché) × 100, échelle de la table « Par mois »)
+BUCKET_MIN_N = 15   # sous ce seuil, lecture indicative et aucun delta
+
+# Seuil d'alerte du bucket « périmées », en points de la colonne « Δ vs marché »
+# (écart RELATIF, cf. relative_delta). L'ancien seuil valait 2 pts sur l'échelle
+# absolue ; rapporté à un Brier de marché de l'ordre de 0,60 sur du 1N2, cela
+# correspond à ~3,3 pts relatifs. Arrondi à 3, donc légèrement plus sensible que
+# l'équivalent exact, et lisible face à la référence du backtest (+1,78 % du
+# marché) : au-delà, l'écart périmées/fraîches dépasse à lui seul tout l'écart
+# modèle/marché mesuré en backtest.
+STALE_ALERT_GAP_PCT = 3.0
 
 BUCKET_ORDER = ("fraiches", "intermediaires", "perimees", "inconnue")
 
@@ -706,7 +723,7 @@ def freshness_section(settled):
         elif m["n_market"] < BUCKET_MIN_N:
             delta, read = "—", f"indicative ({m['n_market']} match(s) avec cotes)"
         else:
-            d = (m["brier"] - m["brier_market"]) * 100
+            d = relative_delta(m["brier"], m["brier_market"])
             deltas[key] = d
             delta, read = f"{d:+.2f} %", "exploitable"
         lines.append(f"| {labels[key]} | {m['n']} | {m['brier']:.4f} | {bmkt} | "
@@ -716,17 +733,17 @@ def freshness_section(settled):
     stale, fresh = deltas.get("perimees"), deltas.get("fraiches")
     if stale is not None and fresh is not None:
         gap = stale - fresh
-        if gap > STALE_ALERT_GAP_PTS:
+        if gap > STALE_ALERT_GAP_PCT:
             lines += [f"⚠ Les cotes périmées performent moins bien que prévu par le "
                       f"backtest — le garde-fou mérite d'être revu.",
                       "",
                       f"  (Δ vs marché : {stale:+.2f} % sur cotes périmées contre "
                       f"{fresh:+.2f} % sur cotes fraîches, soit {gap:+.2f} pts d'écart, "
-                      f"au-delà du seuil de {STALE_ALERT_GAP_PTS:.0f} pts. À relire sur un "
+                      f"au-delà du seuil de {STALE_ALERT_GAP_PCT:.0f} pts. À relire sur un "
                       f"trimestre complet avant de toucher au barème.)", ""]
         else:
             lines += [f"- Écart périmées − fraîches : {gap:+.2f} pt(s) de Δ vs marché "
-                      f"(seuil d'alerte {STALE_ALERT_GAP_PTS:.0f} pts) — le barème tient.", ""]
+                      f"(seuil d'alerte {STALE_ALERT_GAP_PCT:.0f} pts) — le barème tient.", ""]
     elif "perimees" in by_bucket:
         lines += [f"- Comparaison périmées vs fraîches indisponible : il faut "
                   f"n ≥ {BUCKET_MIN_N} avec cotes dans LES DEUX buckets.", ""]
@@ -789,21 +806,23 @@ def build_calibration_report(path, month_filter=None):
 
     lines = ["# Monitoring de production — calibration mensuelle", ""]
     lines += [f"Journal : `{path}` — {len(settled)} prédiction(s) réglée(s), "
-              f"{len(by_month)} mois. Référence Brier hasard = 0.6667 (plus bas = mieux).", ""]
+              f"{len(by_month)} mois. Référence Brier hasard = 0.6667 (plus bas = mieux). "
+              f"« Δ vs marché » = écart **relatif** (Brier − Brier marché) / Brier marché, "
+              f"même échelle que le backtest (M3.5 : +1,78 % du marché).", ""]
     lines += ["## Par mois", "",
               "| Mois | n | Brier | Brier marché | Δ vs marché | RPS | Issue OK | Score exact | Nuls prédits/obs |",
               "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for month in sorted(by_month):
         m = month_metrics(by_month[month])
         bmkt = f"{m['brier_market']:.4f}" if m["brier_market"] is not None else "—"
-        delta = (f"{(m['brier'] - m['brier_market']) * 100:+.2f} %"
+        delta = (f"{relative_delta(m['brier'], m['brier_market']):+.2f} %"
                  if m["brier_market"] is not None else "—")
         lines.append(f"| {month} | {m['n']} | {m['brier']:.4f} | {bmkt} | {delta} | "
                      f"{m['rps']:.4f} | {m['issue_rate']:.0%} | {m['exact_rate']:.0%} | "
                      f"{m['draw_pred']:.0%} / {m['draw_obs']:.0%} |")
     overall = month_metrics(settled)
     bmkt = f"{overall['brier_market']:.4f}" if overall["brier_market"] is not None else "—"
-    delta = (f"{(overall['brier'] - overall['brier_market']) * 100:+.2f} %"
+    delta = (f"{relative_delta(overall['brier'], overall['brier_market']):+.2f} %"
              if overall["brier_market"] is not None else "—")
     lines.append(f"| **Total** | {overall['n']} | {overall['brier']:.4f} | {bmkt} | {delta} | "
                  f"{overall['rps']:.4f} | {overall['issue_rate']:.0%} | "

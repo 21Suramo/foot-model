@@ -49,7 +49,7 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
 ## Commandes
 
 ```bash
-pip install pandas requests          # dépendances
+pip install pandas requests numpy scipy   # dépendances (scipy requis par model.py)
 python pipeline.py --update          # tout mettre à jour (3 ligues x 8 saisons)
 python pipeline.py --update --league E0 --season 2324   # une ligue/saison
 python check.py                      # validation (code retour 0 si tout passe)
@@ -101,9 +101,11 @@ python -m unittest discover -s tests # tests unitaires
   après résolution d'alias, tolérance ±2 jours sur la date (report de
   calendrier) ; ce qui reste introuvable est listé « en attente de données
   source » et jamais deviné. Le rapport ajoute une section par fraîcheur des
-  cotes (alerte si le bucket périmées dérive de plus de 2 points vs le bucket
-  fraîches, n ≥ 15 requis dans les deux) et une section ROI théorique
-  (avertissement sous 100 paris réglés).
+  cotes (alerte si le bucket périmées dérive de plus de 3 points relatifs vs le
+  bucket fraîches, n ≥ 15 requis dans les deux) et une section ROI théorique
+  (avertissement sous 100 paris réglés). La colonne « Δ vs marché » des deux
+  tables est un écart **relatif** — même formule que « Écart rel. marché » de
+  `report35.py` — donc directement comparable au +1,78 % du backtest.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier

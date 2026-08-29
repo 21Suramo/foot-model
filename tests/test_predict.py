@@ -376,27 +376,55 @@ class TestFreshnessSection(unittest.TestCase):
         self.assertEqual(row.split("|")[5].strip(), "—")       # aucun delta
         self.assertIn("indicative", row.split("|")[6])
 
+    # Les deux tests d'alerte encadrent le seuil sur l'échelle RELATIVE :
+    # marché = {0.55, 0.25, 0.20}, issue domicile -> Brier marché = 0.305.
+    MKT = {"home": 0.55, "draw": 0.25, "away": 0.20}
+
     def test_alert_when_stale_bucket_underperforms(self):
-        # fraîches : FINAL ~= marché ; périmées : FINAL nettement pire que le marché
-        good = {"home": 0.55, "draw": 0.25, "away": 0.20}
-        mkt = {"home": 0.55, "draw": 0.25, "away": 0.20}
-        bad = {"home": 0.25, "draw": 0.25, "away": 0.50}
-        entries = ([self._entry(i, 1, probs=good, market=mkt) for i in range(20)]
-                   + [self._entry(50 + i, 6, probs=bad, market=mkt) for i in range(20)])
+        # fraîches : FINAL = marché (Δ 0) ; périmées : Δ ~ +4.7 % relatif, au-delà
+        # du seuil de 3 points
+        stale = {"home": 0.54, "draw": 0.26, "away": 0.20}
+        entries = ([self._entry(i, 1, probs=dict(self.MKT), market=dict(self.MKT))
+                    for i in range(20)]
+                   + [self._entry(50 + i, 6, probs=stale, market=dict(self.MKT))
+                      for i in range(20)])
         with tempfile.TemporaryDirectory() as d:
             text, _ = predict.build_calibration_report(self._journal(d, entries))
         self.assertIn("Les cotes périmées performent moins bien que prévu par le "
                       "backtest", text)
 
     def test_no_alert_when_stale_bucket_holds(self):
-        same = {"home": 0.55, "draw": 0.25, "away": 0.20}
-        mkt = {"home": 0.54, "draw": 0.26, "away": 0.20}
-        entries = ([self._entry(i, 1, probs=same, market=mkt) for i in range(20)]
-                   + [self._entry(50 + i, 6, probs=same, market=mkt) for i in range(20)])
+        # même construction, mais Δ périmées ~ +2.3 % relatif : sous le seuil
+        stale = {"home": 0.545, "draw": 0.255, "away": 0.20}
+        entries = ([self._entry(i, 1, probs=dict(self.MKT), market=dict(self.MKT))
+                    for i in range(20)]
+                   + [self._entry(50 + i, 6, probs=stale, market=dict(self.MKT))
+                      for i in range(20)])
         with tempfile.TemporaryDirectory() as d:
             text, _ = predict.build_calibration_report(self._journal(d, entries))
         self.assertNotIn("mérite d'être revu", text)
         self.assertIn("le barème tient", text)
+
+    def test_delta_is_relative_like_report35(self):
+        """Le Δ affiché est l'écart RELATIF de report35.py, pas un écart absolu :
+        c'est la seule échelle comparable au +1,78 % du backtest M3.5."""
+        probs = {"home": 0.50, "draw": 0.27, "away": 0.23}
+        entries = [self._entry(i, 1, probs=probs, market=dict(self.MKT))
+                   for i in range(20)]
+        with tempfile.TemporaryDirectory() as d:
+            text, overall = predict.build_calibration_report(self._journal(d, entries))
+        b, bmkt = overall["brier"], overall["brier_market"]
+        expected = (b - bmkt) / bmkt * 100          # formule de report35.py
+        self.assertAlmostEqual(predict.relative_delta(b, bmkt), expected, places=9)
+        # ... et ce nombre est bien celui imprimé dans les deux tables
+        printed = f"{expected:+.2f} %"
+        month_row = next(l for l in text.splitlines() if l.startswith("| 2026-08 |"))
+        bucket_row = next(l for l in text.splitlines()
+                          if l.startswith("| " + predict.bucket_labels()["fraiches"]))
+        self.assertEqual(month_row.split("|")[5].strip(), printed)
+        self.assertEqual(bucket_row.split("|")[5].strip(), printed)
+        # l'ancienne échelle absolue donnait un autre chiffre : pas un arrondi
+        self.assertNotAlmostEqual(expected, (b - bmkt) * 100, places=2)
 
     def test_unknown_freshness_is_not_counted_as_fresh(self):
         entries = [self._entry(i, None) for i in range(3)] + [self._entry(9, 1)]
