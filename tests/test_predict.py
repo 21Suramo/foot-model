@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import inspect
 import io
 import json
 import sys
@@ -83,6 +84,33 @@ class TestFreshnessBridge(unittest.TestCase):
         self.assertTrue(predict.margin_ok((1.9, 3.5, 4.2))[0])       # marge ~106 %
         self.assertFalse(predict.margin_ok((2.1, 3.6, 4.4))[0])      # marge < 100 % (arbitrable)
         self.assertFalse(predict.margin_ok((1.5, 3.0, 3.0))[0])      # marge > 112 %
+
+
+class TestRiskParameters(unittest.TestCase):
+    def test_risk_parameters_are_intentional(self):
+        """Ce test échoue volontairement si ces constantes changent — c'est un
+        garde-fou, pas un bug. Une modification de ces valeurs doit être
+        délibérée et accompagnée d'une mise à jour de CLAUDE.md, jamais un
+        changement silencieux."""
+        sig = inspect.signature(predict.kelly_stake)
+        self.assertEqual(sig.parameters["fraction"].default, 0.25,
+                         "kelly_stake fraction : Kelly quart, valeur documentée")
+        self.assertEqual(sig.parameters["cap"].default, 0.05,
+                         "kelly_stake cap : plafond 5 % de bankroll, valeur documentée")
+        self.assertEqual(predict.DEFAULT_BLEND, 0.92,
+                         "poids marché de base : 92 % à J-1, barème validé par "
+                         "backtest_blend.py")
+        self.assertEqual(predict.STALE_FLOOR, 0.28,
+                         "plancher de poids marché : 28 % à partir de J-5, barème "
+                         "validé par backtest_blend.py")
+        self.assertEqual(predict.FRESH_MAX_DAYS, 1,
+                         "seuil de cotes fraîches : J-1, borne du barème documenté")
+        self.assertEqual(predict.STALE_MIN_DAYS, 5,
+                         "seuil de cotes périmées : J-5, borne du barème documenté")
+        # le défaut du CLI doit rester branché sur la constante, pas figé à part
+        default_blend = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "A", "--away", "B"]).blend
+        self.assertEqual(default_blend, predict.DEFAULT_BLEND)
 
 
 class TestMarketConsensus(unittest.TestCase):
