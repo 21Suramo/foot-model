@@ -862,14 +862,14 @@
     "date": "2026-08-30",
     "competition": "E0",
     "probs": {
-      "home": 0.49037339588351203,
-      "draw": 0.24922216020120425,
-      "away": 0.26040444391528367
+      "home": 0.4718347900510625,
+      "draw": 0.26917315371437256,
+      "away": 0.258992056234565
     },
     "market_probs": {
-      "home": 0.5014068634542452,
-      "draw": 0.24929656827287733,
-      "away": 0.24929656827287733
+      "home": 0.4732481222083901,
+      "draw": 0.2710005320646167,
+      "away": 0.25575134572699326
     },
     "predicted_score": "2-1",
     "bets": [],
@@ -877,10 +877,12 @@
     "actual_ht": null,
     "meta": {
       "model": "M5",
-      "lambda_home": 1.761,
-      "lambda_away": 1.336,
-      "market_weight": 0.6,
-      "odds_age_days": 3
+      "home": "Chelsea",
+      "away": "Brighton",
+      "lambda_home": 1.73,
+      "lambda_away": 1.386,
+      "market_weight": 0.92,
+      "odds_age_days": 0
     }
   },
   {
