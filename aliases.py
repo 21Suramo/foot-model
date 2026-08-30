@@ -25,6 +25,8 @@ SEED = {
     "SD Huesca": "Huesca",
     "Real Valladolid": "Valladolid",
     "Real Oviedo": "Oviedo",
+    "Deportivo La Coruna": "La Coruna",
+    "Racing Santander": "Santander",
     # Ligue 1
     "Paris Saint Germain": "Paris SG",
     "Saint-Etienne": "St Etienne",
