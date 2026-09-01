@@ -80,6 +80,32 @@ MARGIN_MAX = 1.12       # marge > 112 % = ligne de mauvaise qualité
 
 ISSUES = ("home", "draw", "away")
 
+# Raisons documentées d'une prédiction sans cote marché (`market_probs` null).
+#
+# Le journal n'enregistrait qu'un `market_weight: 0.0` muet : impossible, en
+# relisant, de distinguer « le book n'avait pas encore ouvert la ligne à J-8 »
+# (structurel, il n'y a rien à corriger) d'une erreur de mapping ou d'un alias
+# manquant (bug, à corriger). On enregistre donc la raison, sans jamais la
+# deviner : les deux dernières sont déduites par le code, les autres doivent
+# être déclarées par l'appelant (`--no-odds-reason`, ou le champ homonyme de
+# l'export du skill). Faute de déclaration, on écrit « non précisée » — pas une
+# raison plausible inventée après coup.
+NO_ODDS_REASONS = {
+    "not_yet_published": "cotes pas encore ouvertes chez les books à cette date",
+    "lookup_failed": "recherche de cotes infructueuse (affiche introuvable, source injoignable)",
+    "margin_rejected": "cotes trouvées mais écartées en amont (marge implicite hors bornes)",
+    "not_provided": "aucune cote passée à l'appel, raison non précisée",
+    "slate_odds_ignored": "--odds ne s'applique qu'à un match unique : ignoré sur un slate",
+}
+# Ce que l'appelant a le droit de déclarer ; le reste est déduit du code.
+DECLARABLE_NO_ODDS_REASONS = ("not_yet_published", "lookup_failed", "margin_rejected")
+DEFAULT_NO_ODDS_REASON = "not_provided"
+
+# Sources de cotes de la base qui sont de vraies lignes de CLÔTURE (cf.
+# footballdata.ODDS_1X2). Un repli sur l'ouverture n'est pas une clôture : le
+# comparer à la cote d'entrée ne mesure pas du CLV.
+CLOSING_ODDS_SOURCES = footballdata.CLOSING_SOURCES
+
 
 # ---------------------------------------------------------------------------
 # Utilitaires de dates et de grille
@@ -221,7 +247,8 @@ def btts_prob(grid):
 
 
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
-                  odds_specs, odds_age_days, blend, fit_cache):
+                  odds_specs, odds_age_days, blend, fit_cache,
+                  no_odds_reason=None):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -246,12 +273,18 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
 
     market = best_odds = None
     m_weight = 0.0
+    reason = None
     fresh_note = "aucune cote fournie — modèle seul"
     if odds_specs:
         triples = parse_odds_triples(odds_specs)
         market, best_odds = market_consensus(triples)
         all_ok = all(margin_ok(t)[0] for t in triples)
         m_weight, _, fresh_note = market_weight(blend, odds_age_days, all_ok)
+    else:
+        # Modèle pur : on trace POURQUOI, sinon le journal ne garde qu'un
+        # market_weight nul qu'on ne saura plus interpréter dans trois semaines.
+        reason = no_odds_reason if no_odds_reason in NO_ODDS_REASONS else DEFAULT_NO_ODDS_REASON
+        fresh_note = f"aucune cote fournie — modèle seul ({NO_ODDS_REASONS[reason]})"
 
     if market is not None:
         final = {k: m_weight * market[k] + (1 - m_weight) * model_probs[k] for k in ISSUES}
@@ -269,7 +302,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "lam_h": lam_h, "lam_a": lam_a, "grid": grid,
         "model": model_probs, "market": market, "best_odds": best_odds,
         "final": final, "market_weight": m_weight, "fresh_note": fresh_note,
-        "odds_age_days": odds_age_days,
+        "odds_age_days": odds_age_days, "no_odds_reason": reason,
     }
 
 
@@ -291,7 +324,8 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
           f"{res['last_train_date']} (réf. {res['ref_monday']}, match prévu {res['date']}).")
     print(f"Lambdas : {home} λ={res['lam_h']:.2f} | {away} λ={res['lam_a']:.2f}")
     print(f"Pont marché/modèle : {res['fresh_note']}" +
-          (f" → poids marché {res['market_weight']:.0%}." if res["market"] else "."))
+          (f" → poids marché {res['market_weight']:.0%}." if res["market"]
+           else f" [{res.get('no_odds_reason') or DEFAULT_NO_ODDS_REASON}]."))
     print()
 
     market, model_probs, final = res["market"], res["model"], res["final"]
@@ -362,6 +396,32 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
 
     if contest is not None:
         run_contest_mode(grid, final, contest, exact_bonus, home, away)
+
+
+def no_odds_recap(without_odds, total):
+    """Récapitulatif des matchs partis sans cote marché, à la fin d'un run.
+
+    Un slate de 29 affiches défile trop vite pour qu'on remarque, ligne à ligne,
+    que 22 d'entre elles tournent en modèle pur. Sans ce bloc, l'information ne
+    ressort qu'en relisant le journal — c'est-à-dire jamais."""
+    if not without_odds:
+        return ""
+    by_reason = {}
+    for res in without_odds:
+        by_reason.setdefault(res.get("no_odds_reason") or DEFAULT_NO_ODDS_REASON,
+                             []).append(res)
+    lines = [f"⚠ {len(without_odds)}/{total} match(s) sans cote marché : modèle pur, "
+             f"garde-fou marché désactivé (poids marché 0 %)."]
+    for reason in sorted(by_reason):
+        lines.append(f"  [{reason}] {NO_ODDS_REASONS[reason]}")
+        for res in by_reason[reason]:
+            lines.append(f"    - {res['league']} {res['home']}-{res['away']} "
+                         f"({res['date']})")
+    if DEFAULT_NO_ODDS_REASON in by_reason:
+        lines.append(f"  (précise la cause avec --no-odds-reason "
+                     f"{{{','.join(DECLARABLE_NO_ODDS_REASONS)}}} pour que le journal "
+                     f"garde la trace de la vraie raison.)")
+    return "\n".join(lines)
 
 
 def run_contest_mode(grid, final, pts, bonus, home, away):
@@ -446,10 +506,18 @@ def log_prediction(path, res, no_stake=False):
                  "lambda_home": round(res["lam_h"], 3),
                  "lambda_away": round(res["lam_a"], 3),
                  "market_weight": round(res["market_weight"], 3),
-                 "odds_age_days": res["odds_age_days"]},
+                 "odds_age_days": res["odds_age_days"],
+                 "no_odds_reason": res.get("no_odds_reason")},
     }
     for i, e in enumerate(entries):
         if e["match"] == match and e["date"] == date_iso and e.get("actual_score") is None:
+            # Une re-prédiction remplace la prévision, pas les faits déjà
+            # constatés : un CLV posé par sync-results survit à la réécriture.
+            for k in ("closing_probs", "clv_pct"):
+                if e.get(k) is not None:
+                    entry[k] = e[k]
+            if (e.get("meta") or {}).get("closing_odds_source"):
+                entry["meta"]["closing_odds_source"] = e["meta"]["closing_odds_source"]
             entries[i] = entry
             break
     else:
@@ -545,7 +613,8 @@ def find_actual_result(conn, league, home, away, date_iso, tolerance=SYNC_TOLERA
     lo = (target - datetime.timedelta(days=tolerance)).isoformat()
     hi = (target + datetime.timedelta(days=tolerance)).isoformat()
     rows = conn.execute(
-        "SELECT date, fthg, ftag, hthg, htag FROM matches "
+        "SELECT date, fthg, ftag, hthg, htag, odds_h, odds_d, odds_a, odds_source "
+        "FROM matches "
         "WHERE league = ? AND home = ? AND away = ? AND fthg IS NOT NULL "
         "AND ftag IS NOT NULL AND date BETWEEN ? AND ?",
         (league, home, away, lo, hi)).fetchall()
@@ -556,41 +625,135 @@ def find_actual_result(conn, league, home, away, date_iso, tolerance=SYNC_TOLERA
     return best, shift(best)
 
 
-def sync_results(conn, path, as_of=None):
-    """Remplit actual_score des matchs passés depuis football.db.
+# --- CLV (closing line value) ---------------------------------------------
+#
+# Le Brier a besoin de beaucoup de matchs pour départager un modèle d'un autre ;
+# le CLV, lui, est lisible bien plus tôt : il ne demande pas de savoir qui a
+# gagné, seulement si la ligne a bougé vers l'issue jouée entre notre cote
+# d'entrée et la clôture. C'est le seul signal exploitable sur quelques dizaines
+# de matchs, donc celui qui rend le monitoring utile dès la première saison.
+#
+# On compare deux probas DÉMARGÉES par la même méthode power (backtest.demargin_
+# power) : la cote d'entrée journalisée dans `market_probs` d'un côté, la cote de
+# clôture de football.db de l'autre. Comparer des cotes brutes mesurerait surtout
+# une différence de marge entre books.
 
-    Renvoie (synchronisés, en_attente). Un match passé absent de la base (source
-    en retard, alias manquant) reste `null` et ressort en attente : on n'invente
-    jamais un score. Suppose que `pipeline.py --update` a déjà tourné."""
+def closing_market_probs(row):
+    """(probas démargées de clôture, source) d'une ligne `matches`, ou (None, source).
+
+    Renvoie None si la ligne n'a pas de cotes 1N2 exploitables, ou si
+    `odds_source` n'est pas une VRAIE source de clôture : football-data se rabat
+    sur l'ouverture pour les saisons d'avant 2019-20, et comparer une cote
+    d'entrée à une ouverture ne mesure pas du CLV. Aucun repli, aucune
+    substitution — sans clôture, pas de CLV."""
+    keys = row.keys() if hasattr(row, "keys") else row
+    src = row["odds_source"] if "odds_source" in keys else None
+    if src not in CLOSING_ODDS_SOURCES:
+        return None, src
+    odds = [row[c] if c in keys else None for c in ("odds_h", "odds_d", "odds_a")]
+    if any(o is None or float(o) <= 1.0 for o in odds):
+        return None, src
+    return dict(zip(ISSUES, backtest.demargin_power(*(float(o) for o in odds)))), src
+
+
+def model_issue(entry):
+    """Issue jouée par le modèle : l'argmax de ses probas FINAL — la même que
+    celle dont `predicted_score` donne le score le plus probable."""
+    probs = entry.get("probs") or {}
+    return max(ISSUES, key=lambda k: probs.get(k, 0.0)) if probs else None
+
+
+def clv_pct(market_probs, closing_probs, issue):
+    """CLV en %, sur une issue, ou None si l'un des deux côtés manque.
+
+    Écart RELATIF entre la proba implicite de clôture et celle payée à l'entrée
+    — même formule que le « Δ vs marché » du rapport (relative_delta), donc même
+    échelle de lecture. Convention de signe usuelle du CLV : **positif = on a
+    battu la ligne** (la clôture juge l'issue plus probable que la cote prise, on
+    a donc encaissé un meilleur prix que le marché final)."""
+    if not market_probs or not closing_probs or issue is None:
+        return None
+    p_in, p_close = market_probs.get(issue), closing_probs.get(issue)
+    if p_in is None or p_close is None or p_in <= 0:
+        return None
+    return relative_delta(p_close, p_in)
+
+
+def apply_clv(entry, row):
+    """Pose `closing_probs` / `clv_pct` sur une entrée depuis la ligne source.
+
+    Additif et idempotent : les champs existants du journal ne sont pas touchés.
+    Une clôture introuvable laisse les deux champs à `null` — jamais une cote de
+    substitution. Retourne True si un CLV a été calculé."""
+    closing, src = closing_market_probs(row)
+    entry["closing_probs"] = closing
+    entry.setdefault("meta", {})["closing_odds_source"] = src
+    issue = model_issue(entry)
+    entry["clv_pct"] = None if closing is None else clv_pct(
+        entry.get("market_probs"), closing, issue)
+    if entry["clv_pct"] is not None:
+        entry["clv_pct"] = round(entry["clv_pct"], 4)
+        entry["meta"]["clv_issue"] = issue
+    return entry["clv_pct"] is not None
+
+
+def sync_results(conn, path, as_of=None):
+    """Remplit actual_score (et le CLV) des matchs passés depuis football.db.
+
+    Renvoie (synchronisés, en_attente, clv_ajoutés). Un match passé absent de la
+    base (source en retard, alias manquant) reste `null` et ressort en attente :
+    on n'invente jamais un score. Même règle pour le CLV : sans cote de clôture
+    dans la source, `closing_probs`/`clv_pct` restent `null`. Suppose que
+    `pipeline.py --update` a déjà tourné.
+
+    Le CLV est aussi rattrapé sur les entrées DÉJÀ réglées qui n'en ont pas
+    encore : la boucle des résultats s'est fermée avant que ce champ n'existe, et
+    la clôture d'un match passé ne bouge plus."""
     as_of = as_of or datetime.date.today()
     entries = load_journal(path)
     alias_map = db.load_aliases(conn)
     teams_cache = {}
-    synced, pending = [], []
+    synced, pending, clv_added = [], [], []
+    touched = False
     for e in entries:
-        if e.get("actual_score") is not None or e["date"] >= as_of.isoformat():
+        if e["date"] >= as_of.isoformat():
+            continue
+        needs_result = e.get("actual_score") is None
+        # Une tentative infructueuse laisse closing_probs à null : on réessaie au
+        # run suivant, la source peut avoir rattrapé son retard entre-temps.
+        needs_clv = e.get("closing_probs") is None
+        if not needs_result and not needs_clv:
             continue
         league = e.get("competition")
         if league not in teams_cache:
             teams_cache[league] = league_teams(conn, league)
         pair = entry_teams(e, teams_cache[league], alias_map)
         if pair is None:
-            pending.append({"match": e["match"], "date": e["date"],
-                            "reason": "équipes non résolues (alias manquant ?)"})
+            if needs_result:
+                pending.append({"match": e["match"], "date": e["date"],
+                                "reason": "équipes non résolues (alias manquant ?)"})
             continue
         row, shift = find_actual_result(conn, league, pair[0], pair[1], e["date"])
         if row is None:
-            pending.append({"match": e["match"], "date": e["date"],
-                            "reason": "absent de football.db (source en retard ?)"})
+            if needs_result:
+                pending.append({"match": e["match"], "date": e["date"],
+                                "reason": "absent de football.db (source en retard ?)"})
             continue
-        actual_ht = (f"{row['hthg']}-{row['htag']}"
-                     if row["hthg"] is not None and row["htag"] is not None else None)
-        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht)
-        synced.append({"match": e["match"], "date": e["date"],
-                       "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift})
-    if synced:
+        if needs_clv and apply_clv(e, row):
+            clv_added.append({"match": e["match"], "date": e["date"],
+                              "clv_pct": e["clv_pct"], "issue": e["meta"]["clv_issue"]})
+        touched = touched or needs_clv
+        if needs_result:
+            actual_ht = (f"{row['hthg']}-{row['htag']}"
+                         if row["hthg"] is not None and row["htag"] is not None else None)
+            settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht)
+            synced.append({"match": e["match"], "date": e["date"],
+                           "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift,
+                           "clv_pct": e.get("clv_pct")})
+            touched = True
+    if touched:
         save_journal(path, entries)
-    return synced, pending
+    return synced, pending, clv_added
 
 
 # ---------------------------------------------------------------------------
@@ -707,8 +870,8 @@ def freshness_section(settled):
              f"{DEFAULT_BLEND:.0%}, ≥ {STALE_MIN_DAYS} j = plancher {STALE_FLOOR:.0%}. "
              f"Le Brier global mélange les deux régimes ; c'est ici que se voit une "
              f"sous-performance propre aux cotes périmées.", "",
-             "| Fraîcheur | n | Brier | Brier marché | Δ vs marché | Lecture |",
-             "| --- | --- | --- | --- | --- | --- |"]
+             "| Fraîcheur | n | dont sans cote | Brier | Brier marché | Δ vs marché | Lecture |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
     deltas = {}
     for key in BUCKET_ORDER:
         rows = by_bucket.get(key)
@@ -726,7 +889,12 @@ def freshness_section(settled):
             d = relative_delta(m["brier"], m["brier_market"])
             deltas[key] = d
             delta, read = f"{d:+.2f} %", "exploitable"
-        lines.append(f"| {labels[key]} | {m['n']} | {m['brier']:.4f} | {bmkt} | "
+        # `odds_age_days` est renseigné même quand aucune cote n'a servi (le
+        # skill connaît la date des cotes qu'il a cherchées sans les trouver) :
+        # ces matchs tournent en modèle pur et pèsent sur le Brier du bucket
+        # sans peser sur son Brier marché. La colonne le rend visible.
+        no_odds = m["n"] - m["n_market"]
+        lines.append(f"| {labels[key]} | {m['n']} | {no_odds} | {m['brier']:.4f} | {bmkt} | "
                      f"{delta} | {read} |")
     lines.append("")
 
@@ -747,6 +915,84 @@ def freshness_section(settled):
     elif "perimees" in by_bucket:
         lines += [f"- Comparaison périmées vs fraîches indisponible : il faut "
                   f"n ≥ {BUCKET_MIN_N} avec cotes dans LES DEUX buckets.", ""]
+    return lines
+
+
+# --- CLV (closing line value) ----------------------------------------------
+#
+# Le Brier a besoin de centaines de matchs pour départager deux jeux de probas ;
+# le CLV se lit sur quelques dizaines, parce qu'il ne dépend pas de qui a gagné.
+# C'est donc le premier signal utilisable du monitoring, à condition de ne le
+# trancher qu'au-delà du même seuil de significativité que le reste du rapport.
+
+CLV_MIN_N = BUCKET_MIN_N   # même garde-fou de significativité que les buckets
+
+# Bande neutre autour de zéro, en points de CLV relatif. Le CLV d'un match se
+# compte en dizaines de points (une ligne qui bouge un peu déplace la proba
+# implicite de plusieurs %) : une moyenne à quelques dixièmes de point n'est pas
+# un « sourcing perdant », c'est du bruit. En dessous, on constate l'alignement
+# sur la clôture au lieu de crier au loup.
+CLV_FLAT_PCT = 1.0
+
+
+def clv_stats(entries):
+    """(n_avec_clv, n_total, moyenne) sur une liste d'entrées."""
+    vals = [e["clv_pct"] for e in entries if e.get("clv_pct") is not None]
+    return len(vals), len(entries), (sum(vals) / len(vals) if vals else None)
+
+
+def clv_section(settled):
+    """Lignes markdown de la section « CLV (closing line value) »."""
+    lines = ["## CLV (closing line value)", "",
+             "Écart **relatif** entre la proba implicite de clôture (cote de "
+             "football.db, démargée power) et celle de la cote utilisée au moment "
+             "de la prédiction, sur l'issue jouée par le modèle. Même formule que "
+             "« Δ vs marché » ci-dessus. **Positif = la cote prise battait la "
+             "clôture** : la ligne a bougé vers notre issue.", ""]
+    n_all, total, avg_all = clv_stats(settled)
+    if not n_all:
+        lines += ["Aucun CLV disponible : il faut à la fois une cote journalisée à "
+                  "la prédiction (`market_probs`) et une cote de clôture en base "
+                  "(`python pipeline.py --update` puis `predict.py sync-results`). "
+                  "Sans l'une des deux, le champ reste `null` — jamais estimé.", ""]
+        return lines
+
+    by_league = {}
+    for e in settled:
+        by_league.setdefault(e.get("competition") or "?", []).append(e)
+    lines += ["| Ligue | n avec CLV | n réglés | CLV moyen | Lecture |",
+              "| --- | --- | --- | --- | --- |"]
+    for league in sorted(by_league):
+        n, tot, avg = clv_stats(by_league[league])
+        if not n:
+            lines.append(f"| {league} | 0 | {tot} | — | aucune clôture appariée |")
+            continue
+        read = "exploitable" if n >= CLV_MIN_N else f"indicative (n < {CLV_MIN_N})"
+        lines.append(f"| {league} | {n} | {tot} | {avg:+.2f} % | {read} |")
+    read = "exploitable" if n_all >= CLV_MIN_N else f"indicative (n < {CLV_MIN_N})"
+    lines += [f"| **Total** | {n_all} | {total} | {avg_all:+.2f} % | {read} |", ""]
+
+    if n_all < CLV_MIN_N:
+        lines += [f"- ⚠ {n_all} match(s) avec CLV (< {CLV_MIN_N}) : lecture indicative, "
+                  f"aucun verdict de tendance.", ""]
+    elif abs(avg_all) <= CLV_FLAT_PCT:
+        lines += [f"- CLV moyen {avg_all:+.2f} % sur {n_all} match(s) : dans la bande "
+                  f"neutre (±{CLV_FLAT_PCT:.0f} pt) — les cotes retenues suivent la "
+                  f"clôture, ni battue ni subie. Rien à corriger côté sourcing.", ""]
+    elif avg_all > 0:
+        lines += [f"- CLV moyen {avg_all:+.2f} % sur {n_all} match(s) : les cotes "
+                  f"retenues battent la clôture en moyenne — le sourcing des cotes "
+                  f"prend la ligne du bon côté.", ""]
+    else:
+        lines += [f"- ⚠ CLV moyen {avg_all:+.2f} % sur {n_all} match(s) : les cotes "
+                  f"retenues sont en moyenne moins bonnes que la clôture. À creuser "
+                  f"côté sourcing (books mous, cotes recopiées trop tard) avant toute "
+                  f"lecture du ROI.", ""]
+    missing = total - n_all
+    if missing:
+        lines += [f"- {missing} match(s) réglé(s) sans CLV : pas de cote à la "
+                  f"prédiction, ou pas de cote de clôture en base pour cette affiche. "
+                  f"Laissés à `null`, jamais estimés.", ""]
     return lines
 
 
@@ -830,6 +1076,7 @@ def build_calibration_report(path, month_filter=None):
     lines.append("")
 
     lines += freshness_section(settled)
+    lines += clv_section(settled)
     lines += roi_section(settled)
 
     # Focus sur le dernier mois (ou le mois filtré)
@@ -887,7 +1134,9 @@ def load_skill_json(source):
 def skill_json_to_fixture(doc):
     """Extrait de l'export les champs mappables sur les arguments de `match`.
 
-    Champs lus : league, home, away, match_date, odds_date, odds_1x2. Les champs
+    Champs lus : league, home, away, match_date, odds_date, odds_1x2 et
+    `no_odds_reason` (optionnel : pourquoi l'export ne porte pas de cote — c'est
+    le skill qui le sait, pas predict.py). Les champs
     `ou` (le modèle de production price les scores depuis sa propre grille, il ne
     se cale pas sur les cotes O/U) et `final_probs_1x2` (predict.py recalcule son
     propre FINAL) sont ignorés — voir la note émise à l'appel."""
@@ -905,8 +1154,13 @@ def skill_json_to_fixture(doc):
             odds_spec = f"{float(o['home'])},{float(o['draw'])},{float(o['away'])}"
         except (KeyError, TypeError, ValueError):
             sys.exit("--from-skill-json : 'odds_1x2' doit contenir home, draw, away numériques.")
+    reason = doc.get("no_odds_reason")
+    if reason is not None and reason not in DECLARABLE_NO_ODDS_REASONS:
+        sys.exit(f"--from-skill-json : 'no_odds_reason' vaut '{reason}', attendu l'une de "
+                 f"{list(DECLARABLE_NO_ODDS_REASONS)} — on ne devine pas une raison.")
     return {"league": league, "home": home, "away": away, "odds_spec": odds_spec,
-            "match_date": doc.get("match_date"), "odds_date": doc.get("odds_date")}
+            "match_date": doc.get("match_date"), "odds_date": doc.get("odds_date"),
+            "no_odds_reason": reason}
 
 
 # ---------------------------------------------------------------------------
@@ -925,6 +1179,10 @@ def cmd_match(args, conn):
         if fx["odds_spec"]:
             args.odds = [fx["odds_spec"]]
         args.date, args.odds_date = fx["match_date"], fx["odds_date"]
+        # L'export sait pourquoi il n'a pas de cote ; le CLI reste prioritaire
+        # s'il en déclare une aussi (l'opérateur a le dernier mot).
+        if fx["no_odds_reason"] and not args.no_odds_reason:
+            args.no_odds_reason = fx["no_odds_reason"]
         if doc.get("ou") is not None:
             log.info("Export skill : champ 'ou' présent mais non consommé — le modèle de "
                      "production price les scores depuis sa propre grille entraînée, il ne se "
@@ -960,12 +1218,17 @@ def cmd_match(args, conn):
         fixtures.append(tuple(parts))
     if not fixtures:
         sys.exit("Fournis --home/--away (avec --league) ou au moins un --fixture LIGUE,Dom,Ext.")
+    no_odds_reason = args.no_odds_reason
     if args.odds and len(fixtures) > 1:
         log.warning("--odds ne s'applique qu'à un match unique — ignoré pour un slate "
                     "(%d affiches). Passe chaque match séparément pour blender ses cotes.",
                     len(fixtures))
+        # Cette perte était jusqu'ici purement verbale : le journal n'en gardait
+        # qu'un market_weight nul. On la nomme dans chaque entrée.
+        no_odds_reason = "slate_odds_ignored"
 
     fit_cache = {}
+    without_odds = []
     for i, (league, home, away) in enumerate(fixtures):
         if league not in footballdata.LEAGUES:
             sys.exit(f"Ligue inconnue '{league}' (attendu {footballdata.LEAGUES}).")
@@ -973,10 +1236,15 @@ def cmd_match(args, conn):
             print("\n" + "=" * 72 + "\n")
         res = predict_match(conn, cfg, league, home, away, target_date,
                             args.odds if len(fixtures) == 1 else [], odds_age,
-                            args.blend, fit_cache)
+                            args.blend, fit_cache, no_odds_reason)
         print_prediction(res, cfg, contest, args.contest_exact_bonus, args.no_stake)
+        if res["market"] is None:
+            without_odds.append(res)
         if not args.no_log:
             log_prediction(args.log, res, args.no_stake)
+    recap = no_odds_recap(without_odds, len(fixtures))
+    if recap:
+        print("\n" + recap)
     if not args.no_log:
         print(f"\n{len(fixtures)} prédiction(s) journalisée(s) dans {args.log}.")
 
@@ -992,10 +1260,15 @@ def cmd_result(args, conn):
 
 def cmd_sync_results(args, conn):
     as_of = datetime.date.fromisoformat(args.as_of) if args.as_of else None
-    synced, pending = sync_results(conn, args.log, as_of)
+    synced, pending, clv_added = sync_results(conn, args.log, as_of)
     for s in synced:
         note = f"  (joué à {s['shift']:+d} j de la date prévue)" if s["shift"] else ""
-        print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}")
+        clv = f"  CLV {s['clv_pct']:+.2f} %" if s["clv_pct"] is not None else ""
+        print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}{clv}")
+    if clv_added:
+        avg = sum(c["clv_pct"] for c in clv_added) / len(clv_added)
+        print(f"\nCLV posé sur {len(clv_added)} match(s) — moyenne {avg:+.2f} % "
+              f"(positif = cote d'entrée meilleure que la clôture).")
     if pending:
         print("\nEn attente de données source :")
         for p in pending:
@@ -1045,6 +1318,10 @@ def build_parser():
                    help="MODE CONCOURS : points si l'issue est correcte (ex: 13,50,68)")
     p.add_argument("--contest-exact-bonus", type=float, default=0.0, metavar="B",
                    help="Points bonus si le score exact est correct (défaut 0)")
+    p.add_argument("--no-odds-reason", choices=DECLARABLE_NO_ODDS_REASONS, default=None,
+                   help="Pourquoi aucune cote n'est fournie, journalisé dans "
+                        "meta.no_odds_reason. Sans ce drapeau l'entrée est marquée "
+                        f"'{DEFAULT_NO_ODDS_REASON}' — jamais une raison devinée.")
     p.add_argument("--no-stake", action="store_true", help="désactive la section mise suggérée")
     p.add_argument("--no-log", action="store_true", help="ne pas journaliser la prédiction")
     p.set_defaults(func=cmd_match)

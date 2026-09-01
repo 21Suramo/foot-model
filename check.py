@@ -21,7 +21,7 @@ for _s in footballdata.SEASONS:
     EXPECTED[("F1", _s)] = 306 if _s >= "2324" else 380
 EXPECTED[("F1", "1920")] = 279
 
-CLOSING_SOURCES = ("pinnacle_close", "avg_close")
+CLOSING_SOURCES = footballdata.CLOSING_SOURCES
 CLOSING_FROM_SEASON = "1920"  # football-data n'a pas de cotes de clôture avant 2019-20
 
 

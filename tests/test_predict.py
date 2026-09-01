@@ -238,8 +238,8 @@ class TestSyncResults(unittest.TestCase):
         conn = self._db()
         with tempfile.TemporaryDirectory() as d:
             path = self._journal(d)
-            synced, pending = predict.sync_results(conn, path,
-                                                   as_of=datetime.date(2026, 8, 30))
+            synced, pending, _ = predict.sync_results(conn, path,
+                                                      as_of=datetime.date(2026, 8, 30))
             self.assertEqual([s["match"] for s in synced],
                              ["Arsenal-Chelsea", "Everton-Crystal Palace"])
             self.assertEqual([p["match"] for p in pending], ["Hull-Man United"])
@@ -257,7 +257,7 @@ class TestSyncResults(unittest.TestCase):
         conn = self._db()
         with tempfile.TemporaryDirectory() as d:
             path = self._journal(d)
-            _, pending = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            _, pending, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
             self.assertNotIn("Leeds-Fulham", [p["match"] for p in pending])
         conn.close()
 
@@ -271,8 +271,8 @@ class TestSyncResults(unittest.TestCase):
                  "probs": {"home": 0.35, "draw": 0.3, "away": 0.35},
                  "predicted_score": "1-1", "bets": [], "actual_score": None,
                  "actual_ht": None, "meta": {"model": "M5"}}]))
-            synced, pending = predict.sync_results(conn, path,
-                                                   as_of=datetime.date(2026, 8, 30))
+            synced, pending, _ = predict.sync_results(conn, path,
+                                                      as_of=datetime.date(2026, 8, 30))
             self.assertEqual(synced, [])
             self.assertEqual(len(pending), 1)
             self.assertIsNone(json.loads(path.read_text())[0]["actual_score"])
@@ -288,12 +288,12 @@ class TestSyncResults(unittest.TestCase):
                  "probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
                  "predicted_score": "2-1", "bets": [], "actual_score": None,
                  "actual_ht": None, "meta": {"model": "M5"}}]))
-            synced, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            synced, _, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
             self.assertEqual(synced[0]["shift"], 1)
             # deuxième passage : plus rien à faire
-            synced2, pending2 = predict.sync_results(conn, path,
-                                                     as_of=datetime.date(2026, 8, 30))
-            self.assertEqual((synced2, pending2), ([], []))
+            synced2, pending2, clv2 = predict.sync_results(conn, path,
+                                                          as_of=datetime.date(2026, 8, 30))
+            self.assertEqual((synced2, pending2, clv2), ([], [], []))
         conn.close()
 
     def test_teams_resolved_via_meta_and_alias(self):
@@ -315,8 +315,8 @@ class TestSyncResults(unittest.TestCase):
                  "competition": "E0", "probs": {"home": 0.4, "draw": 0.3, "away": 0.3},
                  "predicted_score": "1-1", "bets": [], "actual_score": None,
                  "actual_ht": None, "meta": {"model": "M5"}}]))
-            synced, pending = predict.sync_results(conn, path,
-                                                   as_of=datetime.date(2026, 8, 30))
+            synced, pending, _ = predict.sync_results(conn, path,
+                                                      as_of=datetime.date(2026, 8, 30))
             self.assertEqual(synced, [])
             self.assertIn("non résolues", pending[0]["reason"])
         conn.close()
@@ -334,6 +334,18 @@ class TestFreshnessSection(unittest.TestCase):
             "actual_score": actual, "actual_ht": None,
             "meta": {"model": "M5", "odds_age_days": age},
         }
+
+    @staticmethod
+    def _table_row(text, first_cell):
+        """Ligne de table markdown -> {colonne: valeur}, en s'appuyant sur l'en-tête.
+
+        Indexer les colonnes par position casse dès qu'on en insère une ; ici on
+        les lit par nom."""
+        lines = text.splitlines()
+        i = next(i for i, l in enumerate(lines) if l.startswith("| " + first_cell))
+        sep = max(j for j, l in enumerate(lines[:i]) if l.startswith("| ---"))
+        cells = lambda line: [c.strip() for c in line.split("|")[1:-1]]
+        return dict(zip(cells(lines[sep - 1]), cells(lines[i])))
 
     def _journal(self, d, entries):
         path = Path(d) / "j.json"
@@ -370,11 +382,10 @@ class TestFreshnessSection(unittest.TestCase):
         entries = [self._entry(i, 7) for i in range(3)]
         with tempfile.TemporaryDirectory() as d:
             text, _ = predict.build_calibration_report(self._journal(d, entries))
-        row = next(l for l in text.splitlines()
-                   if l.startswith("| " + predict.bucket_labels()["perimees"]))
-        self.assertEqual(row.split("|")[2].strip(), "3")
-        self.assertEqual(row.split("|")[5].strip(), "—")       # aucun delta
-        self.assertIn("indicative", row.split("|")[6])
+        row = self._table_row(text, predict.bucket_labels()["perimees"])
+        self.assertEqual(row["n"], "3")
+        self.assertEqual(row["Δ vs marché"], "—")              # aucun delta
+        self.assertIn("indicative", row["Lecture"])
 
     # Les deux tests d'alerte encadrent le seuil sur l'échelle RELATIVE :
     # marché = {0.55, 0.25, 0.20}, issue domicile -> Brier marché = 0.305.
@@ -418,11 +429,10 @@ class TestFreshnessSection(unittest.TestCase):
         self.assertAlmostEqual(predict.relative_delta(b, bmkt), expected, places=9)
         # ... et ce nombre est bien celui imprimé dans les deux tables
         printed = f"{expected:+.2f} %"
-        month_row = next(l for l in text.splitlines() if l.startswith("| 2026-08 |"))
-        bucket_row = next(l for l in text.splitlines()
-                          if l.startswith("| " + predict.bucket_labels()["fraiches"]))
-        self.assertEqual(month_row.split("|")[5].strip(), printed)
-        self.assertEqual(bucket_row.split("|")[5].strip(), printed)
+        self.assertEqual(self._table_row(text, "2026-08 |")["Δ vs marché"], printed)
+        self.assertEqual(
+            self._table_row(text, predict.bucket_labels()["fraiches"])["Δ vs marché"],
+            printed)
         # l'ancienne échelle absolue donnait un autre chiffre : pas un arrondi
         self.assertNotAlmostEqual(expected, (b - bmkt) * 100, places=2)
 
@@ -725,3 +735,353 @@ class TestSkillJsonEquivalence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoOddsReason(unittest.TestCase):
+    """Un `market_weight: 0.0` doit dire POURQUOI : sans ça, impossible de
+    distinguer une ligne pas encore ouverte d'un bug de mapping."""
+
+    def _mini_db(self):
+        conn = db.connect(":memory:")
+        base = datetime.date(2025, 8, 1)
+        for wk in range(20):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Alpha", "away": "Beta", "fthg": 2, "ftag": 1})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Gamma", "away": "Alpha", "fthg": 0, "ftag": 2})
+        conn.commit()
+        return conn
+
+    CFG = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+
+    def _predict(self, conn, odds=(), reason=None):
+        return predict.predict_match(conn, self.CFG, "E0", "Alpha", "Beta",
+                                     datetime.date(2026, 8, 15), list(odds), 1,
+                                     0.92, {}, reason)
+
+    def test_declared_reason_is_kept(self):
+        conn = self._mini_db()
+        res = self._predict(conn, reason="not_yet_published")
+        self.assertEqual(res["no_odds_reason"], "not_yet_published")
+        self.assertIn("pas encore ouvertes", res["fresh_note"])
+        conn.close()
+
+    def test_undeclared_reason_is_not_guessed(self):
+        """Sans déclaration on écrit 'non précisée', jamais une cause plausible."""
+        conn = self._mini_db()
+        res = self._predict(conn)
+        self.assertEqual(res["no_odds_reason"], predict.DEFAULT_NO_ODDS_REASON)
+        conn.close()
+
+    def test_unknown_reason_falls_back_to_default(self):
+        conn = self._mini_db()
+        res = self._predict(conn, reason="parce que")
+        self.assertEqual(res["no_odds_reason"], predict.DEFAULT_NO_ODDS_REASON)
+        conn.close()
+
+    def test_reason_is_none_when_odds_are_used(self):
+        conn = self._mini_db()
+        res = self._predict(conn, odds=["1.85,3.6,4.4"], reason="lookup_failed")
+        self.assertIsNone(res["no_odds_reason"])
+        self.assertGreater(res["market_weight"], 0)
+        conn.close()
+
+    def test_reason_lands_in_journal_meta(self):
+        conn = self._mini_db()
+        res = self._predict(conn, reason="margin_rejected")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, res)
+            e = json.loads(path.read_text())[0]
+        self.assertIsNone(e["market_probs"])
+        self.assertEqual(e["meta"]["market_weight"], 0.0)
+        self.assertEqual(e["meta"]["no_odds_reason"], "margin_rejected")
+        conn.close()
+
+    def test_slate_drops_odds_and_says_so(self):
+        """--odds ne s'applique qu'à un match unique : sur un slate la perte
+        était silencieuse dans le journal, elle doit maintenant être nommée."""
+        conn = self._mini_db()
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / "j.json")
+            argv = ["match", "--fixture", "E0,Alpha,Beta", "--fixture", "E0,Gamma,Alpha",
+                    "--odds", "1.85,3.6,4.4", "--date", "2026-08-15", "--log", path]
+            args = predict.build_parser().parse_args(argv)
+            orig, backtest35.frozen = backtest35.frozen, lambda: self.CFG
+            try:
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf), \
+                        self.assertLogs(predict.log, "WARNING") as logged:
+                    args.func(args, conn)
+            finally:
+                backtest35.frozen = orig
+            self.assertIn("ne s'applique qu'à un match unique", "\n".join(logged.output))
+            entries = json.loads(Path(path).read_text())
+        self.assertEqual(len(entries), 2)
+        for e in entries:
+            self.assertIsNone(e["market_probs"])
+            self.assertEqual(e["meta"]["no_odds_reason"], "slate_odds_ignored")
+        self.assertIn("2/2 match(s) sans cote marché", buf.getvalue())
+        conn.close()
+
+    def test_recap_lists_matches_and_stays_quiet_when_all_have_odds(self):
+        conn = self._mini_db()
+        res = self._predict(conn, reason="lookup_failed")
+        recap = predict.no_odds_recap([res], 3)
+        self.assertIn("1/3 match(s) sans cote marché", recap)
+        self.assertIn("[lookup_failed]", recap)
+        self.assertIn("E0 Alpha-Beta", recap)
+        self.assertEqual(predict.no_odds_recap([], 3), "")
+        conn.close()
+
+    def test_skill_export_carries_the_reason(self):
+        doc = {"schema": predict.SKILL_SCHEMA, "league": "E0", "home": "Alpha",
+               "away": "Beta", "match_date": "2026-08-15", "odds_date": "2026-08-08",
+               "no_odds_reason": "not_yet_published"}
+        fx = predict.skill_json_to_fixture(doc)
+        self.assertIsNone(fx["odds_spec"])
+        self.assertEqual(fx["no_odds_reason"], "not_yet_published")
+
+    def test_skill_export_rejects_an_invented_reason(self):
+        doc = {"schema": predict.SKILL_SCHEMA, "league": "E0", "home": "Alpha",
+               "away": "Beta", "no_odds_reason": "bof"}
+        with self.assertRaises(SystemExit):
+            predict.skill_json_to_fixture(doc)
+
+    def test_skill_export_without_reason_is_fine(self):
+        doc = {"schema": predict.SKILL_SCHEMA, "league": "E0", "home": "Alpha",
+               "away": "Beta"}
+        self.assertIsNone(predict.skill_json_to_fixture(doc)["no_odds_reason"])
+
+
+class TestClv(unittest.TestCase):
+    """CLV : la cote d'entrée bat-elle la clôture ? Lisible bien avant le Brier."""
+
+    MKT = {"home": 0.50, "draw": 0.27, "away": 0.23}
+
+    def _db(self, odds=(2.00, 3.40, 4.00), source="pinnacle_close"):
+        conn = db.connect(":memory:")
+        row = {"date": "2026-08-22", "league": "E0", "season": "2627",
+               "home": "Arsenal", "away": "Chelsea", "fthg": 2, "ftag": 1,
+               "hthg": 1, "htag": 0}
+        if odds:
+            row.update({"odds_h": odds[0], "odds_d": odds[1], "odds_a": odds[2],
+                        "odds_source": source})
+        db.upsert_match(conn, row)
+        # affiche sans aucune cote en base : la clôture n'existe pas
+        db.upsert_match(conn, {"date": "2026-08-22", "league": "E0", "season": "2627",
+                               "home": "Everton", "away": "Leeds", "fthg": 1, "ftag": 1})
+        conn.commit()
+        return conn
+
+    DEFAULT_MARKET = object()   # sentinelle : market=None doit vouloir dire « aucune cote »
+
+    def _journal(self, d, market=DEFAULT_MARKET, probs=None):
+        path = Path(d) / "j.json"
+        entry = lambda h, a, mkt: {
+            "match": f"{h}-{a}", "date": "2026-08-22", "competition": "E0",
+            "probs": probs or {"home": 0.55, "draw": 0.25, "away": 0.20},
+            "market_probs": mkt, "predicted_score": "2-1", "bets": [],
+            "actual_score": None, "actual_ht": None,
+            "meta": {"model": "M5", "home": h, "away": a}}
+        path.write_text(json.dumps([
+            entry("Arsenal", "Chelsea",
+                  dict(self.MKT) if market is self.DEFAULT_MARKET else market),
+            entry("Everton", "Leeds", dict(self.MKT))]))
+        return path
+
+    def test_closing_odds_found_fills_clv(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            synced, _, clv_added = predict.sync_results(
+                conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        self.assertEqual(e["actual_score"], "2-1")
+        self.assertIsNotNone(e["closing_probs"])
+        self.assertAlmostEqual(sum(e["closing_probs"].values()), 1.0, places=6)
+        self.assertEqual(e["meta"]["closing_odds_source"], "pinnacle_close")
+        self.assertEqual(e["meta"]["clv_issue"], "home")   # argmax des probs FINAL
+        self.assertIn("Arsenal-Chelsea", [c["match"] for c in clv_added])
+        self.assertEqual([s["clv_pct"] for s in synced if s["match"] == "Arsenal-Chelsea"],
+                         [e["clv_pct"]])
+        conn.close()
+
+    def test_clv_value_on_a_known_case(self):
+        """Cote d'entrée 2.00 (p=0.50 démargée) contre une clôture qui donne
+        l'issue domicile plus probable : CLV positif, et exactement l'écart
+        relatif de relative_delta()."""
+        conn = self._db(odds=(1.80, 3.60, 4.60))
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        expected = predict.relative_delta(e["closing_probs"]["home"], self.MKT["home"])
+        self.assertAlmostEqual(e["clv_pct"], round(expected, 4), places=4)
+        self.assertGreater(e["clv_pct"], 0)   # clôture plus courte = on a battu la ligne
+        conn.close()
+
+    def test_clv_negative_when_the_line_drifts_away(self):
+        conn = self._db(odds=(2.60, 3.40, 2.80))   # domicile s'allonge
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        self.assertLess(e["clv_pct"], 0)
+        conn.close()
+
+    def test_missing_closing_odds_stays_null(self):
+        """Everton-Leeds n'a aucune cote en base : rien n'est inventé."""
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Everton-Leeds"]
+        self.assertEqual(e["actual_score"], "1-1")     # le résultat, lui, est posé
+        self.assertIsNone(e["closing_probs"])
+        self.assertIsNone(e["clv_pct"])
+        conn.close()
+
+    def test_opening_odds_are_not_a_closing_line(self):
+        """football-data se rabat sur l'ouverture avant 2019-20 : comparer une
+        cote d'entrée à une ouverture ne mesure pas du CLV."""
+        conn = self._db(source="avg_open")
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        self.assertIsNone(e["closing_probs"])
+        self.assertIsNone(e["clv_pct"])
+        self.assertEqual(e["meta"]["closing_odds_source"], "avg_open")
+        conn.close()
+
+    def test_no_market_probs_means_no_clv(self):
+        """Une prédiction sans cote d'entrée n'a rien à comparer à la clôture —
+        mais la clôture, elle, est quand même journalisée."""
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d, market=None)
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        self.assertIsNotNone(e["closing_probs"])
+        self.assertIsNone(e["clv_pct"])
+        conn.close()
+
+    def test_backfills_already_settled_entries(self):
+        """Les entrées réglées avant l'existence du champ doivent le recevoir."""
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            entries = json.loads(path.read_text())
+            for e in entries:
+                e["actual_score"], e["actual_ht"] = "2-1", "1-0"
+            path.write_text(json.dumps(entries))
+            synced, _, clv_added = predict.sync_results(
+                conn, path, as_of=datetime.date(2026, 8, 30))
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        self.assertEqual(synced, [])                    # aucun résultat à reposer
+        self.assertEqual([c["match"] for c in clv_added], ["Arsenal-Chelsea"])
+        self.assertIsNotNone(e["clv_pct"])
+        conn.close()
+
+    def test_sync_stays_idempotent_with_clv(self):
+        conn = self._db()
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            before = path.read_text()
+            out = predict.sync_results(conn, path, as_of=datetime.date(2026, 8, 30))
+            self.assertEqual(out[0], [])
+            self.assertEqual(out[2], [])                # pas de recalcul
+            self.assertEqual(path.read_text(), before)
+        conn.close()
+
+    def test_reprediction_does_not_erase_a_posted_clv(self):
+        conn = self._db()
+        res = {"league": "E0", "home": "Arsenal", "away": "Chelsea",
+               "date": datetime.date(2026, 8, 22), "lam_h": 1.6, "lam_a": 1.1,
+               "market_weight": 0.0, "odds_age_days": None, "no_odds_reason": "lookup_failed",
+               "final": {"home": 0.55, "draw": 0.25, "away": 0.20}, "market": None,
+               "grid": {(1, 0): 0.3, (1, 1): 0.25, (0, 1): 0.2, (2, 1): 0.25}}
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d)
+            entries = json.loads(path.read_text())
+            entries[0]["closing_probs"] = {"home": 0.52, "draw": 0.26, "away": 0.22}
+            entries[0]["clv_pct"] = 4.0
+            path.write_text(json.dumps(entries))
+            predict.log_prediction(path, res)
+            e = {x["match"]: x for x in json.loads(path.read_text())}["Arsenal-Chelsea"]
+        self.assertEqual(e["clv_pct"], 4.0)
+        self.assertIsNotNone(e["closing_probs"])
+        conn.close()
+
+
+class TestClvSection(unittest.TestCase):
+    """Section CLV du rapport : par ligue, avec le même garde-fou n ≥ 15."""
+
+    def _entry(self, i, league="E0", clv=None):
+        return {"match": f"A{i}-B{i}", "date": "2026-08-15", "competition": league,
+                "probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                "market_probs": {"home": 0.50, "draw": 0.27, "away": 0.23},
+                "closing_probs": None if clv is None else {"home": 0.52, "draw": 0.26,
+                                                           "away": 0.22},
+                "clv_pct": clv, "predicted_score": "2-1", "actual_score": "2-1",
+                "actual_ht": None, "bets": [],
+                "meta": {"model": "M5", "odds_age_days": 1}}
+
+    def _journal(self, d, entries):
+        path = Path(d) / "j.json"
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_no_clv_at_all_says_so(self):
+        lines = predict.clv_section([self._entry(i) for i in range(3)])
+        self.assertIn("Aucun CLV disponible", "\n".join(lines))
+
+    def test_average_per_league_and_total(self):
+        entries = ([self._entry(i, "E0", clv=2.0) for i in range(4)]
+                   + [self._entry(10 + i, "SP1", clv=-1.0) for i in range(2)])
+        text = "\n".join(predict.clv_section(entries))
+        self.assertIn("| E0 | 4 | 4 | +2.00 % |", text)
+        self.assertIn("| SP1 | 2 | 2 | -1.00 % |", text)
+        self.assertIn("| **Total** | 6 | 6 | +1.00 % |", text)
+
+    def test_small_sample_gives_no_verdict(self):
+        text = "\n".join(predict.clv_section([self._entry(i, clv=2.0) for i in range(3)]))
+        self.assertIn("aucun verdict de tendance", text)
+        self.assertNotIn("prend la ligne du bon côté", text)
+
+    def test_large_positive_sample_gets_a_verdict(self):
+        n = predict.CLV_MIN_N
+        text = "\n".join(predict.clv_section([self._entry(i, clv=2.0) for i in range(n)]))
+        self.assertIn("battent la clôture", text)
+        self.assertNotIn("aucun verdict de tendance", text)
+
+    def test_large_negative_sample_warns(self):
+        n = predict.CLV_MIN_N
+        text = "\n".join(predict.clv_section([self._entry(i, clv=-2.0) for i in range(n)]))
+        self.assertIn("moins bonnes que la clôture", text)
+
+    def test_near_zero_average_is_neutral_not_an_alert(self):
+        """Un CLV moyen à quelques dixièmes de point est du bruit, pas un
+        sourcing perdant."""
+        n = predict.CLV_MIN_N
+        text = "\n".join(predict.clv_section([self._entry(i, clv=-0.06) for i in range(n)]))
+        self.assertIn("bande neutre", text)
+        self.assertNotIn("moins bonnes que la clôture", text)
+
+    def test_entries_without_clv_are_counted_not_estimated(self):
+        entries = ([self._entry(i, clv=2.0) for i in range(2)]
+                   + [self._entry(10 + i) for i in range(3)])
+        text = "\n".join(predict.clv_section(entries))
+        self.assertIn("| E0 | 2 | 5 | +2.00 % |", text)
+        self.assertIn("3 match(s) réglé(s) sans CLV", text)
+
+    def test_section_is_in_the_report(self):
+        entries = [self._entry(i, clv=1.5) for i in range(3)]
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertIn("## CLV (closing line value)", text)
+        self.assertIn("## ROI réel", text)

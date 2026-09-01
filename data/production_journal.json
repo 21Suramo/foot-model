@@ -22,8 +22,16 @@
       "lambda_home": 2.201,
       "lambda_away": 0.756,
       "market_weight": 0.92,
-      "odds_age_days": 1
-    }
+      "odds_age_days": 1,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.8193633812286567,
+      "draw": 0.12471297342254796,
+      "away": 0.05592364534879539
+    },
+    "clv_pct": -2.7032
   },
   {
     "match": "Hull-Man United",
@@ -48,8 +56,16 @@
       "lambda_home": 1.41,
       "lambda_away": 1.597,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.09925718481314039,
+      "draw": 0.17174808277649872,
+      "away": 0.728994732410361
+    },
+    "clv_pct": 3.454
   },
   {
     "match": "Everton-Crystal Palace",
@@ -74,8 +90,16 @@
       "lambda_home": 1.416,
       "lambda_away": 1.255,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.4121010560849842,
+      "draw": 0.27897599549207713,
+      "away": 0.3089229484229387
+    },
+    "clv_pct": -8.155
   },
   {
     "match": "Ipswich-Sunderland",
@@ -100,8 +124,16 @@
       "lambda_home": 1.105,
       "lambda_away": 1.458,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.3330108448451268,
+      "draw": 0.2905310581640731,
+      "away": 0.37645809699079996
+    },
+    "clv_pct": 3.1115
   },
   {
     "match": "Nott'm Forest-Leeds",
@@ -126,8 +158,16 @@
       "lambda_home": 1.482,
       "lambda_away": 1.337,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.3877884959566198,
+      "draw": 0.29240385792335233,
+      "away": 0.31980764612002777
+    },
+    "clv_pct": -12.0633
   },
   {
     "match": "Brentford-Tottenham",
@@ -152,8 +192,16 @@
       "lambda_home": 1.894,
       "lambda_away": 1.259,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.4803514766888516,
+      "draw": 0.24734747994063228,
+      "away": 0.27230104337051597
+    },
+    "clv_pct": 31.9876
   },
   {
     "match": "Brighton-Aston Villa",
@@ -178,8 +226,16 @@
       "lambda_home": 1.598,
       "lambda_away": 1.303,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.46301665769868644,
+      "draw": 0.27300202098016646,
+      "away": 0.2639813213211471
+    },
+    "clv_pct": 8.6591
   },
   {
     "match": "Man City-Bournemouth",
@@ -204,8 +260,16 @@
       "lambda_home": 2.172,
       "lambda_away": 1.146,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.6761409468939803,
+      "draw": 0.18655335986194604,
+      "away": 0.13730569324407382
+    },
+    "clv_pct": 1.5927
   },
   {
     "match": "Newcastle-Liverpool",
@@ -230,8 +294,16 @@
       "lambda_home": 1.665,
       "lambda_away": 1.707,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.2543853919271596,
+      "draw": 0.24315695820451447,
+      "away": 0.502457649868326
+    },
+    "clv_pct": -1.4788
   },
   {
     "match": "Fulham-Chelsea",
@@ -256,8 +328,16 @@
       "lambda_home": 1.427,
       "lambda_away": 1.499,
       "market_weight": 0.44,
-      "odds_age_days": 4
-    }
+      "odds_age_days": 4,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.2598037403630956,
+      "draw": 0.26531036058901114,
+      "away": 0.47488589904789325
+    },
+    "clv_pct": 2.1162
   },
   {
     "match": "Marseille-Strasbourg",
@@ -282,8 +362,16 @@
       "lambda_home": 2.116,
       "lambda_away": 1.393,
       "market_weight": 0.92,
-      "odds_age_days": 1
-    }
+      "odds_age_days": 1,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.5580575743135086,
+      "draw": 0.22751084466279733,
+      "away": 0.21443158102369403
+    },
+    "clv_pct": -4.5035
   },
   {
     "match": "Le Mans-Brest",
@@ -308,8 +396,16 @@
       "lambda_home": 1.667,
       "lambda_away": 1.24,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.3786730566786349,
+      "draw": 0.28034929294580296,
+      "away": 0.3409776503755623
+    },
+    "clv_pct": -0.2674
   },
   {
     "match": "Toulouse-Lyon",
@@ -334,8 +430,16 @@
       "lambda_home": 1.443,
       "lambda_away": 1.307,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.42421938898141437,
+      "draw": 0.27246019783142467,
+      "away": 0.30332041318716085
+    },
+    "clv_pct": -35.5612
   },
   {
     "match": "Lens-Auxerre",
@@ -360,8 +464,16 @@
       "lambda_home": 2.048,
       "lambda_away": 0.886,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.676711052286387,
+      "draw": 0.1969192524425271,
+      "away": 0.12636969527108585
+    },
+    "clv_pct": 11.2837
   },
   {
     "match": "Nice-Lorient",
@@ -386,8 +498,16 @@
       "lambda_home": 1.623,
       "lambda_away": 1.311,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.4086460504177269,
+      "draw": 0.28925269419324884,
+      "away": 0.3021012553890244
+    },
+    "clv_pct": -8.0104
   },
   {
     "match": "Troyes-Paris FC",
@@ -412,8 +532,16 @@
       "lambda_home": 1.274,
       "lambda_away": 1.46,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.2825231956054248,
+      "draw": 0.263864132993553,
+      "away": 0.4536126714010222
+    },
+    "clv_pct": 21.8052
   },
   {
     "match": "Angers-Lille",
@@ -438,8 +566,16 @@
       "lambda_home": 0.818,
       "lambda_away": 1.515,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.1941962881412107,
+      "draw": 0.257628899944633,
+      "away": 0.5481748119141564
+    },
+    "clv_pct": -5.1518
   },
   {
     "match": "Paris SG-Rennes",
@@ -490,8 +626,16 @@
       "lambda_home": 2.086,
       "lambda_away": 1.01,
       "market_weight": 0.92,
-      "odds_age_days": 1
-    }
+      "odds_age_days": 1,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.6667570227583496,
+      "draw": 0.19922101988911858,
+      "away": 0.13402195735253172
+    },
+    "clv_pct": -11.429
   },
   {
     "match": "Vallecano-Alaves",
@@ -516,8 +660,16 @@
       "lambda_home": 1.506,
       "lambda_away": 1.024,
       "market_weight": 0.92,
-      "odds_age_days": 0
-    }
+      "odds_age_days": 0,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.3915637907817026,
+      "draw": 0.3042181046091486,
+      "away": 0.3042181046091486
+    },
+    "clv_pct": -5.6553
   },
   {
     "match": "Betis-Sociedad",
@@ -542,8 +694,16 @@
       "lambda_home": 1.886,
       "lambda_away": 1.15,
       "market_weight": 0.92,
-      "odds_age_days": 1
-    }
+      "odds_age_days": 1,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.45352498891862586,
+      "draw": 0.27111309938748007,
+      "away": 0.275361911693894
+    },
+    "clv_pct": -2.4771
   },
   {
     "match": "Valencia-Celta",
@@ -568,8 +728,16 @@
       "lambda_home": 1.526,
       "lambda_away": 1.185,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.3922314017910549,
+      "draw": 0.2997049610218813,
+      "away": 0.30806363718706375
+    },
+    "clv_pct": -12.5833
   },
   {
     "match": "Espanol-Real Madrid",
@@ -594,8 +762,16 @@
       "lambda_home": 1.101,
       "lambda_away": 1.846,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.11684820864150565,
+      "draw": 0.1815764015757004,
+      "away": 0.701575389782794
+    },
+    "clv_pct": 5.5733
   },
   {
     "match": "Ath Madrid-Villarreal",
@@ -620,8 +796,16 @@
       "lambda_home": 1.987,
       "lambda_away": 1.365,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.5411055584966463,
+      "draw": 0.23924622422831962,
+      "away": 0.21964821727503397
+    },
+    "clv_pct": 5.7655
   },
   {
     "match": "Getafe-Racing Santander",
@@ -646,8 +830,16 @@
       "lambda_home": 1.143,
       "lambda_away": 0.948,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.4208953874367934,
+      "draw": 0.3060342075531959,
+      "away": 0.2730704050100106
+    },
+    "clv_pct": -4.0523
   },
   {
     "match": "Elche-Barcelona",
@@ -672,8 +864,16 @@
       "lambda_home": 1.243,
       "lambda_away": 2.39,
       "market_weight": 0.6,
-      "odds_age_days": 3
-    }
+      "odds_age_days": 3,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.10105591287047412,
+      "draw": 0.158012778745755,
+      "away": 0.7409313083837709
+    },
+    "clv_pct": 8.4617
   },
   {
     "match": "Osasuna-Levante",
@@ -698,8 +898,16 @@
       "lambda_home": 1.72,
       "lambda_away": 1.194,
       "market_weight": 0.44,
-      "odds_age_days": 4
-    }
+      "odds_age_days": 4,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.5066511861749765,
+      "draw": 0.275235715785524,
+      "away": 0.21811309803949927
+    },
+    "clv_pct": -8.1225
   },
   {
     "match": "Real Madrid-Sociedad",
@@ -724,8 +932,16 @@
       "lambda_home": 2.506,
       "lambda_away": 0.972,
       "market_weight": 0.28,
-      "odds_age_days": 6
-    }
+      "odds_age_days": 6,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "home"
+    },
+    "closing_probs": {
+      "home": 0.8323587968749808,
+      "draw": 0.10922274265971654,
+      "away": 0.058418460465302684
+    },
+    "clv_pct": 16.7951
   },
   {
     "match": "Le Havre-Monaco",
@@ -750,8 +966,16 @@
       "lambda_home": 1.246,
       "lambda_away": 1.778,
       "market_weight": 0.76,
-      "odds_age_days": 2
-    }
+      "odds_age_days": 2,
+      "closing_odds_source": "avg_close",
+      "clv_issue": "away"
+    },
+    "closing_probs": {
+      "home": 0.23602430965697027,
+      "draw": 0.26407247820998875,
+      "away": 0.49990321213304095
+    },
+    "clv_pct": 0.0246
   },
   {
     "match": "Liverpool-Nott'm Forest",

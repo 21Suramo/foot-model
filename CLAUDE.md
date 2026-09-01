@@ -45,6 +45,18 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   plancher du poids marché) sont verrouillés par
   `tests/test_predict.py::TestRiskParameters::test_risk_parameters_are_intentional` :
   les changer fait échouer un test, exprès.
+- **M5.2 — traçabilité des cotes manquantes + CLV : implémenté.** Deux trous du
+  monitoring comblés. (1) 48 % des matchs à venir tournaient en modèle pur avec
+  un `market_weight: 0.0` muet : le journal enregistre désormais
+  `meta.no_odds_reason` et la fin d'un run récapitule les affiches sans cote.
+  **Diagnostic : structurel, pas un bug** — les cotes viennent du skill
+  `football-match-predictor` (recherche web, un match à la fois) ; à J-6/J-9 les
+  books n'ont pas encore ouvert leurs lignes, et le skill écarte celles dont la
+  marge implicite est aberrante. Les deux premières semaines, générées à
+  J-1/J-2, avaient 100 % de couverture. (2) `sync-results` pose maintenant
+  `closing_probs` et `clv_pct` : le CLV se lit sur quelques dizaines de matchs,
+  contrairement au Brier. Section CLV par ligue dans le rapport, même seuil
+  n ≥ 15.
 
 ## Commandes
 
@@ -60,6 +72,8 @@ python report35.py                   # rapport -> reports/m35_backtest.md
 python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --odds 1.85,3.6,4.4 --odds-date 2026-08-14   # prédiction production (M5)
 python predict.py result --match "Arsenal-Chelsea" --actual 2-1   # enregistre un résultat
+python predict.py match --league SP1 --home Betis --away "Real Madrid" \
+    --no-odds-reason not_yet_published        # sans cote, en tracant la cause
 python pipeline.py --update && python predict.py sync-results  # résultats réels depuis football.db
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
@@ -102,12 +116,24 @@ python -m unittest discover -s tests # tests unitaires
   `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
   après résolution d'alias, tolérance ±2 jours sur la date (report de
   calendrier) ; ce qui reste introuvable est listé « en attente de données
-  source » et jamais deviné. Le rapport ajoute une section par fraîcheur des
+  source » et jamais deviné. Elle pose aussi le **CLV** : `closing_probs` (cote
+  de clôture de `football.db`, démargée power comme `market_probs`) et
+  `clv_pct` (écart relatif entre les deux sur l'issue jouée par le modèle,
+  positif = la cote prise battait la clôture). Sans cote d'entrée, sans clôture
+  en base, ou quand `odds_source` est un repli sur l'ouverture (ce n'est alors
+  pas une clôture), les deux restent `null`. Le CLV est rattrapé sur les entrées
+  déjà réglées qui n'en ont pas. Le rapport ajoute une section par fraîcheur des
   cotes (alerte si le bucket périmées dérive de plus de 3 points relatifs vs le
   bucket fraîches, n ≥ 15 requis dans les deux) et une section ROI théorique
   (avertissement sous 100 paris réglés). La colonne « Δ vs marché » des deux
   tables est un écart **relatif** — même formule que « Écart rel. marché » de
-  `report35.py` — donc directement comparable au +1,78 % du backtest.
+  `report35.py` — donc directement comparable au +1,78 % du backtest, comme le
+  CLV. Une prédiction sans cote marché journalise `meta.no_odds_reason` :
+  `not_yet_published` / `lookup_failed` / `margin_rejected` déclarés par
+  `--no-odds-reason` ou par le champ homonyme de l'export du skill,
+  `slate_odds_ignored` déduit (`--odds` ne s'applique qu'à un match unique et
+  est ignoré sur un slate), `not_provided` quand rien n'est déclaré — « raison
+  non précisée », jamais une cause plausible devinée après coup.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
@@ -140,6 +166,14 @@ la source ne sont pas des erreurs).
   `python predict.py sync-results` pour clore les matchs de la semaine
   précédente. Vérifier le résumé "en attente de données source" — s'il
   grossit, creuser la source (football-data.co.uk en retard, alias manquant).
+- **Chaque lundi, à la génération** : lire le récapitulatif « X/N match(s) sans
+  cote marché » en fin de run. Une affiche sans cote à J-7 est normale (les
+  books n'ont pas ouvert) ; la même affiche toujours sans cote à J-1 ne l'est
+  pas — creuser le sourcing plutôt que de laisser `not_provided` s'accumuler.
+- **1er de chaque mois** : lire la section **CLV** du rapport avant le ROI. Elle
+  bouge bien avant le Brier : un CLV moyen durablement négatif (n ≥ 15) dit que
+  les cotes retenues sont plus mauvaises que la clôture — le problème est alors
+  dans le sourcing des cotes, pas dans le modèle.
 - **1er de chaque mois** : `python predict.py report`, committer
   reports/production_calibration.md, comparer le delta vs marché du mois
   au chiffre du backtest (+1,78 %). Si le delta réel est significativement

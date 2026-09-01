@@ -28,6 +28,13 @@ ODDS_1X2 = [
     (("AvgH", "AvgD", "AvgA"), "avg_open"),
     (("BbAvH", "BbAvD", "BbAvA"), "avg_open"),
 ]
+# Sources de la chaîne ci-dessus qui sont de VRAIES cotes de CLÔTURE (les autres
+# sont des replis sur l'ouverture, pour les saisons d'avant 2019-20). Dérivé de la
+# chaîne plutôt que réécrit à la main : si ODDS_1X2 change, la liste suit. Sert à
+# check.py (complétude des cotes de clôture) et au CLV de predict.py, qui refuse
+# de comparer une cote d'entrée à une simple ouverture.
+CLOSING_SOURCES = tuple(dict.fromkeys(s for _, s in ODDS_1X2 if s.endswith("_close")))
+
 ODDS_OU25 = [
     ("PC>2.5", "PC<2.5"),
     ("AvgC>2.5", "AvgC<2.5"),
