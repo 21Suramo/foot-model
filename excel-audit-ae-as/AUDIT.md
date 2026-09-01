@@ -60,6 +60,8 @@ Notation : **Fond 70 % + Forme 30 %**. `N/A` neutralise un critère via
 
 ## 2. Anomalies relevées
 
+Dix anomalies, toutes corrigées dans le livrable.
+
 | # | Gravité | Constat | Effet | Statut |
 |---|---|---|---|---|
 | **A1** | 🔴 Bloquant | **`Grille AS` : la colonne E (« Note ») n'était plus une formule.** Seul `E16` calculait `=MOYENNE(G16:BN16)` ; `E17:E22` et `E24:E31` étaient des **valeurs 10 figées** avec une liste déroulante de saisie. | La synthèse AS (E34/E35/E36) affichait **100 % en permanence**, quelles que soient les notes réellement saisies. `Synthèse & Performance` reprenait ce 100 % comme « Moyenne Appels Sortants ». | ✅ corrigé (§5.1) |
@@ -70,6 +72,7 @@ Notation : **Fond 70 % + Forme 30 %**. `N/A` neutralise un critère via
 | **A6** | 🟡 Moyen | **13 graphiques sur 14 pointaient une série vide** (`'Suivi Hebdo'!$B$10:$D$10`, ligne blanche) ; 14 graphiques pour 5 agents, dont des doublons. | Légende « Série 2 » vide sur presque tous les graphiques. | ✅ corrigé (§4.5) |
 | **A7** | 🟡 Moyen | **`DMC (min)` = 0 partout** dans l'historique, alors que les heures début/fin sont saisies dans les grilles. | Indicateur de durée de communication inexploitable. | ✅ corrigé (§3) |
 | **A8** | 🟡 Moyen | **Aucun indicateur de complétude ni de garde-fou.** Une grille où un seul critère sur 25 est noté produit un score de 100 %. C'est le cas de 3 des 6 audits existants (BATTAL SALMA, CHAMCHATI Hajar, BOURBAH AMINA : **2 critères renseignés sur 25, soit 8 %**). | Trois « 100 % » et « 65 % » du classeur ne sont statistiquement pas interprétables. | ✅ corrigé (§3 et §5.5) |
+| **A10** | 🔴 Bloquant | **`Grille AE` impossible à faire défiler.** Les volets étaient figés en `A38`, soit **37 lignes bloquées en haut de feuille ≈ 1 300 pixels** — plus haut qu'un écran. Il ne restait aucune zone défilable : la molette et les barres de défilement n'avaient plus d'effet. La grille AS, elle, était correctement réglée (`A16`, ~300 px). | Les critères Forme et la synthèse de la grille AE étaient inatteignables à la souris. | ✅ corrigé (§5.6) |
 | **A9** | 🔵 Mineur | Cible 80 % réécrite en dur dans ~130 formules ; bandeau « A. ÉVALUATION DU FOND » absent de la grille AE (les deux grilles n'avaient pas la même structure) ; ligne « STATUT OBJECTIF » absente de la grille AS ; cellule `F9` « Sélection de semaine » inutilisée. | Maintenance. | ✅ corrigé (§5.3-5.4) |
 
 ---
@@ -238,6 +241,14 @@ et plages en aval ont été régénérées** en conséquence (critères Fond 16�
 
 **5.4 — Ligne « STATUT OBJECTIF » ajoutée à la grille AS** (l. 37), par symétrie avec la grille AE.
 
+**5.6 — Volets figés remis à une taille utilisable** (A10). `Grille AE` passe de `A38` à `A16`,
+comme la grille AS : 232 pt d'en-tête figé (~309 px) au lieu de 979 pt (~1 305 px), et 37 lignes
+redeviennent défilables. Deux volets utiles ont été ajoutés au passage : `Fiche Agent` fige les
+8 lignes d'identité (le nom de l'agent reste visible pendant qu'on fait défiler les graphiques)
+et `Historique AE AS` fige la date et le nom d'agent quand on défile vers la droite sur les
+20 colonnes. `build.py` refuse maintenant de produire un classeur dont un volet figé dépasse
+320 pt de haut ou 45 caractères de large — l'anomalie ne peut plus revenir.
+
 **5.5 — Cible et seuil de complétude centralisés** : les statuts des deux grilles, de
 l'historique et de la synthèse pointent `'KPI Agents'!$E$5` (cible) et `'KPI Agents'!$F$5`
 (complétude minimale). Changer 80 % en 85 % se fait maintenant dans une seule cellule.
@@ -257,6 +268,8 @@ l'historique et de la synthèse pointent `'KPI Agents'!$E$5` (cible) et `'KPI Ag
 - Un attribut `xr:uid` réinjecté depuis le fichier d'origine référençait un espace de noms non
   déclaré par le générateur : XML techniquement invalide qu'Excel pouvait refuser d'ouvrir.
   Il est désormais retiré, et `reinject_dv.py` relit le classeur après écriture pour le vérifier.
+- Volets figés mesurés feuille par feuille : le plus grand fait 309 px de haut (`Grille AE`),
+  bien en dessous de la limite de 320 pt contrôlée automatiquement par `build.py`.
 
 ## 7. Points d'attention pour l'exploitation
 

@@ -10,7 +10,7 @@ Entrée : SRC (classeur original, jamais modifié)   Sortie : DST
 from copy import copy
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter as gcl
+from openpyxl.utils import get_column_letter as gcl, coordinate_to_tuple
 from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule, FormulaRule
@@ -92,7 +92,10 @@ for k, v in band_style.items():
     setattr(gae["B14"], k, v)
 gae.merge_cells("B14:BN14")
 gae.row_dimensions[14].height = band_height or 20
-gae.freeze_panes = "A39"
+# A10 : le fichier d'origine figeait les volets en A38 sur la grille AE, soit 37 lignes
+# bloquées (~1 300 px) — plus haut qu'un écran, donc feuille impossible à faire défiler.
+# On aligne sur la grille AS : en-têtes figés jusqu'à la ligne des libellés de colonnes.
+gae.freeze_panes = "A16"
 for dv in list(gae.data_validations.dataValidation):
     if dv.type == "list" and dv.formula1 and "10,5,0" in str(dv.formula1):
         dv.sqref = openpyxl.worksheet.cell_range.MultiCellRange("G16:BN25 G27:BN41")
@@ -225,7 +228,7 @@ def block(sheet, first, last, ncrit):
 block(AE, *R_AE, ncrit=25)
 block(AS_, *R_AS, ncrit=15)
 
-ws.freeze_panes = "A4"
+ws.freeze_panes = "C4"      # date + nom d'agent visibles en défilant vers la droite
 ws.auto_filter.ref = f"A3:{gcl(NH)}{R_AS[1]}"
 ws.sheet_view.showGridLines = False
 for txt, bg, fg in (("Objectif Atteint", GREEN, GREEN_T), ("Non Atteint", RED, RED_T)):
@@ -580,6 +583,7 @@ NCOL = 20
 for i in range(1, NCOL + 1):
     fa.column_dimensions[gcl(i)].width = 9
 fa.sheet_view.showGridLines = False
+fa.freeze_panes = "A9"      # le nom de l'agent reste visible en faisant défiler les graphiques
 
 AGT = "$C$8"
 FA = f'{HB},{AGT},{HL},$F$6'          # audits de l'agent, année sélectionnée
@@ -868,6 +872,18 @@ for name, titles in ((KPI, "1:11"), (CRIT, "1:5"), (HIST, "1:3"), (HEB, "1:6"), 
     p.page_setup.fitToHeight = 0
     p.sheet_properties.pageSetUpPr.fitToPage = True
     p.print_title_rows = titles
+# garde-fou : un volet figé plus grand qu'un écran rend la feuille non défilable (anomalie A10)
+MAX_PT, MAX_CH = 320.0, 45.0
+for w in wb.worksheets:
+    if not w.freeze_panes:
+        continue
+    fr, fcol = coordinate_to_tuple(w.freeze_panes)
+    ht = sum((w.row_dimensions[i].height or 15.0) for i in range(1, fr))
+    wd = sum((w.column_dimensions[gcl(i)].width or 8.43) for i in range(1, fcol))
+    assert ht <= MAX_PT and wd <= MAX_CH, (
+        f"{w.title} : volet figé trop grand ({ht:.0f} pt / {wd:.1f} car.) — "
+        f"la feuille ne pourrait pas défiler")
+
 wb.active = wb.sheetnames.index(SYN)
 
 wb.save(DST)

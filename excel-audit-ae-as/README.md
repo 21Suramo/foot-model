@@ -4,7 +4,7 @@ Travail annexe au dépôt `foot-model`, sans lien avec le modèle de pronostics.
 
 | Fichier | Rôle |
 |---|---|
-| `AUDIT.md` | Audit du classeur d'origine, les 9 anomalies et leur correction, détail des livrables |
+| `AUDIT.md` | Audit du classeur d'origine, les 10 anomalies et leur correction, détail des livrables |
 | `Grille_evaluation_AE_AS_automatisee.xlsx` | Le livrable |
 | `build.py` | Reconstruction complète du classeur (openpyxl) à partir de l'original |
 | `reinject_dv.py` | Restaure les listes déroulantes inter-feuilles supprimées par openpyxl, puis relit le classeur pour vérifier qu'il reste valide |
