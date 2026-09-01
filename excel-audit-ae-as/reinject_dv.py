@@ -4,7 +4,7 @@ autre feuille : LOG Agent, Objet&TYP). On les réinjecte dans le XML après sauv
 import re, shutil, zipfile, os, sys
 
 SRC = "/root/.claude/uploads/df2a0f54-c801-5124-a6bc-46534cbb9ac3/eedbb5a5-Grille_evaluation_abb_AE_AS__VCF.xlsx"
-DST = sys.argv[1] if len(sys.argv) > 1 else "/home/user/foot-model/.audit-xlsx/Grille_evaluation_AE_AS_automatisee.xlsx"
+DST = sys.argv[1] if len(sys.argv) > 1 else "/home/user/foot-model/excel-audit-ae-as/Grille_evaluation_AE_AS_automatisee.xlsx"
 EXT_URI = "{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"
 
 def sheet_map(z):
@@ -30,7 +30,12 @@ with zipfile.ZipFile(SRC) as z:
     for name in ("Grille AE", "Grille AS"):
         xml = z.read(smap[name]).decode("utf8")
         m = re.search(r'<ext uri="\{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF\}".*?</ext>', xml, re.S)
-        blocks[name] = m.group(0) if m else None
+        blk = m.group(0) if m else None
+        if blk:
+            # openpyxl ne déclare pas le namespace "xr" sur <worksheet> : on retire les
+            # attributs xr:uid, sinon le XML produit est invalide (préfixe non lié).
+            blk = re.sub(r'\s+xr:uid="[^"]*"', "", blk)
+        blocks[name] = blk
 
 with zipfile.ZipFile(DST) as z:
     dmap = sheet_map(z)
@@ -58,4 +63,8 @@ with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
     for info, data in new_items:
         z.writestr(info.filename, data)
 shutil.move(tmp, DST)
-print(f"x14 dataValidations réinjectées dans {changed} feuille(s)")
+
+# garde-fou : le classeur doit rester lisible après réinjection
+import openpyxl
+openpyxl.load_workbook(DST)
+print(f"x14 dataValidations réinjectées dans {changed} feuille(s) — classeur relu sans erreur")
