@@ -144,11 +144,15 @@ for dv in list(gas.data_validations.dataValidation):
     if dv.type == "list" and dv.formula1 and "10,5,0" in str(dv.formula1):
         dv.sqref = openpyxl.worksheet.cell_range.MultiCellRange("G16:BN22 G24:BN31")
 
-# ================================================================ A2/A7/A8 — Historique automatisé
-ws = wb[HIST]
-for mr in list(ws.merged_cells.ranges):
-    ws.unmerge_cells(str(mr))
-ws.delete_rows(1, ws.max_row)
+# ================================================================ A2/A7/A8/A11 — Historique automatisé
+# Les formules sources vivent sur une feuille masquée : 60 emplacements pour la grille AE
+# puis 60 pour la grille AS. L'onglet visible n'en est qu'une VUE compactée et triée par
+# date décroissante, pour que les écoutes AE et AS se suivent sans trous (anomalie A11).
+CALC = "Données grilles"
+if CALC in wb.sheetnames:
+    del wb[CALC]
+calc = wb.create_sheet(CALC, wb.sheetnames.index("LOG Agent") + 1)
+calc.sheet_state = "hidden"
 
 HEAD = ["Date d'écoute", "Nom de l'Agent", "LOG Agent", "Type d'appel", "Objet de l'appel",
         "DMC (min)", "Moyenne Fond", "Moyenne Forme", "Score Global", "Statut", "Semaine",
@@ -157,22 +161,15 @@ HEAD = ["Date d'écoute", "Nom de l'Agent", "LOG Agent", "Type d'appel", "Objet 
 WIDTHS = [13.5, 24, 11, 12, 16, 10, 13, 14, 12, 16, 9, 8, 11, 13, 22, 15, 17, 12, 16, 7]
 NH = len(HEAD)
 R_AE, R_AS = (4, 63), (64, 123)
+KEY, RNK = gcl(NH + 2), gcl(NH + 3)          # V et W
 
-ws["A1"] = "HISTORIQUE DES ÉVALUATIONS AE / AS"
-ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NH)
-ws["A1"].font = f(16, True, WHITE); ws["A1"].fill = fill(NAVY); ws["A1"].alignment = CENTER
-ws.row_dimensions[1].height = 30
-ws["A2"] = ("Feuille 100 % calculée — aucune saisie ici. Chaque ligne reflète une colonne "
-            "d'évaluation des onglets « Grille AE » et « Grille AS » ; elle se remplit dès qu'un "
-            "nom d'agent est choisi dans la grille correspondante.")
-ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=NH)
-ws["A2"].font = f(9, False, GREY); ws["A2"].alignment = LEFT
-ws.row_dimensions[2].height = 26
-for i, (h, w) in enumerate(zip(HEAD, WIDTHS), start=1):
-    c = ws.cell(3, i, h)
-    c.font = f(10, True, WHITE); c.fill = fill(NAVY2); c.alignment = CENTER; c.border = BOX
-    ws.column_dimensions[gcl(i)].width = w
-ws.row_dimensions[3].height = 34
+for i, h in enumerate(HEAD, start=1):
+    c = calc.cell(3, i, h)
+    c.font = f(10, True, WHITE); c.fill = fill(NAVY2); c.alignment = CENTER
+calc.cell(3, NH + 2, "Clé de tri").font = f(10, True)
+calc.cell(3, NH + 3, "Rang (récent → ancien)").font = f(10, True)
+calc.cell(1, 1, "Feuille technique masquée : elle porte les formules qui lisent les deux grilles. "
+                "L'onglet « Historique AE AS » en est la vue triée. Ne rien saisir ici.").font = f(10, True, RED_T)
 
 def idx(sheet, row, i):
     return f"INDEX('{sheet}'!$G${row}:$BN${row},1,{i})"
@@ -211,22 +208,57 @@ def block(sheet, first, last, ncrit):
             "R": f'=IF(NOT(ISNUMBER($Q{r})),"",$Q{r}/{ncrit})',
             "S": f'=IF(NOT(ISNUMBER($R{r})),"",IF($R{r}>={SEUIL},"Oui","Non"))',
             "T": f'=IF(NOT(ISNUMBER($A{r})),"",MONTH($A{r}))',
+            # clé unique = date + n° d'emplacement, pour un tri sans ex aequo
+            KEY: f'=IF($B{r}="","",IF(ISNUMBER($A{r}),$A{r},0)+ROW()/100000)',
+            RNK: f'=IF(NOT(ISNUMBER(${KEY}{r})),"",RANK(${KEY}{r},${KEY}$4:${KEY}$123,0))',
         }
         for col, v in vals.items():
-            ws[f"{col}{r}"] = v
-            c = ws[f"{col}{r}"]
-            c.font = f(10); c.border = BOX
-            c.alignment = LEFT if col in "BEMO" else CENTER
-        ws[f"A{r}"].number_format = "dd/mm/yyyy"
-        ws[f"F{r}"].number_format = MIN
-        for col in "GHIR":
-            ws[f"{col}{r}"].number_format = PCT
-            ws[f"{col}{r}"].fill = fill(LIGHT)
-        ws[f"I{r}"].font = f(10, True, NAVY)
-        ws[f"T{r}"].number_format = NUM
+            calc[f"{col}{r}"] = v
 
 block(AE, *R_AE, ncrit=25)
 block(AS_, *R_AS, ncrit=15)
+
+# ---- la vue visible : liste continue, la plus récente en haut ----------------
+ws = wb[HIST]
+for mr in list(ws.merged_cells.ranges):
+    ws.unmerge_cells(str(mr))
+ws.delete_rows(1, ws.max_row)
+
+ws["A1"] = "HISTORIQUE DES ÉVALUATIONS AE / AS"
+ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=NH)
+ws["A1"].font = f(16, True, WHITE); ws["A1"].fill = fill(NAVY); ws["A1"].alignment = CENTER
+ws.row_dimensions[1].height = 30
+ws["A2"] = ("Feuille 100 % calculée — aucune saisie ici. Les écoutes des DEUX grilles (AE et AS) "
+            "sont fusionnées dans une seule liste continue, triée de la plus récente à la plus "
+            "ancienne. Une ligne apparaît dès qu'un nom d'agent est choisi dans une grille.")
+ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=13)
+ws["A2"].font = f(9, False, GREY); ws["A2"].alignment = LEFT
+ws.merge_cells(start_row=2, start_column=14, end_row=2, end_column=NH)
+c = ws.cell(2, 14, '="Total : "&COUNT($I$4:$I$123)&" audits   ·   AE : "'
+                   '&COUNTIF($D$4:$D$123,"AE")&"   ·   AS : "&COUNTIF($D$4:$D$123,"AS")')
+c.font = f(11, True, NAVY); c.fill = fill(LIGHT); c.alignment = CENTER; c.border = BOX
+ws.row_dimensions[2].height = 30
+
+for i, (h, w) in enumerate(zip(HEAD, WIDTHS), start=1):
+    c = ws.cell(3, i, h)
+    c.font = f(10, True, WHITE); c.fill = fill(NAVY2); c.alignment = CENTER; c.border = BOX
+    ws.column_dimensions[gcl(i)].width = w
+ws.row_dimensions[3].height = 34
+
+for r in range(4, 124):
+    for i in range(1, NH + 1):
+        col = gcl(i)
+        c = ws.cell(r, i, f'=IFERROR(INDEX(\'{CALC}\'!{col}$4:{col}$123,'
+                          f'MATCH(ROW()-3,\'{CALC}\'!${RNK}$4:${RNK}$123,0)),"")')
+        c.font = f(10); c.border = BOX
+        c.alignment = LEFT if col in "BEMO" else CENTER
+    ws[f"A{r}"].number_format = "dd/mm/yyyy"
+    ws[f"F{r}"].number_format = MIN
+    for col in "GHIR":
+        ws[f"{col}{r}"].number_format = PCT
+        ws[f"{col}{r}"].fill = fill(LIGHT)
+    ws[f"I{r}"].font = f(10, True, NAVY)
+    ws[f"T{r}"].number_format = NUM
 
 ws.freeze_panes = "C4"      # date + nom d'agent visibles en défilant vers la droite
 ws.auto_filter.ref = f"A3:{gcl(NH)}{R_AS[1]}"
@@ -237,6 +269,10 @@ for txt, bg, fg in (("Objectif Atteint", GREEN, GREEN_T), ("Non Atteint", RED, R
 for txt, bg, fg in (("Oui", GREEN, GREEN_T), ("Non", AMBER, AMBER_T)):
     ws.conditional_formatting.add(f"S4:S{R_AS[1]}", FormulaRule(
         formula=[f'$S4="{txt}"'], fill=fill(bg), font=Font(name=FONT, size=10, bold=True, color=fg)))
+ws.conditional_formatting.add(f"D4:D{R_AS[1]}", FormulaRule(
+    formula=['$D4="AS"'], fill=fill("FCE4D6"), font=Font(name=FONT, size=10, bold=True, color="C55A11")))
+ws.conditional_formatting.add(f"D4:D{R_AS[1]}", FormulaRule(
+    formula=['$D4="AE"'], fill=fill("DDEBF7"), font=Font(name=FONT, size=10, bold=True, color="1F4E79")))
 ws.conditional_formatting.add(f"R4:R{R_AS[1]}", FormulaRule(
     formula=[f'AND(ISNUMBER($R4),$R4<{SEUIL})'],
     font=Font(name=FONT, size=10, color=AMBER_T)))

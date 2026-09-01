@@ -60,7 +60,7 @@ Notation : **Fond 70 % + Forme 30 %**. `N/A` neutralise un critère via
 
 ## 2. Anomalies relevées
 
-Dix anomalies, toutes corrigées dans le livrable.
+Onze anomalies, toutes corrigées dans le livrable.
 
 | # | Gravité | Constat | Effet | Statut |
 |---|---|---|---|---|
@@ -73,6 +73,7 @@ Dix anomalies, toutes corrigées dans le livrable.
 | **A7** | 🟡 Moyen | **`DMC (min)` = 0 partout** dans l'historique, alors que les heures début/fin sont saisies dans les grilles. | Indicateur de durée de communication inexploitable. | ✅ corrigé (§3) |
 | **A8** | 🟡 Moyen | **Aucun indicateur de complétude ni de garde-fou.** Une grille où un seul critère sur 25 est noté produit un score de 100 %. C'est le cas de 3 des 6 audits existants (BATTAL SALMA, CHAMCHATI Hajar, BOURBAH AMINA : **2 critères renseignés sur 25, soit 8 %**). | Trois « 100 % » et « 65 % » du classeur ne sont statistiquement pas interprétables. | ✅ corrigé (§3 et §5.5) |
 | **A10** | 🔴 Bloquant | **`Grille AE` impossible à faire défiler.** Les volets étaient figés en `A38`, soit **37 lignes bloquées en haut de feuille ≈ 1 300 pixels** — plus haut qu'un écran. Il ne restait aucune zone défilable : la molette et les barres de défilement n'avaient plus d'effet. La grille AS, elle, était correctement réglée (`A16`, ~300 px). | Les critères Forme et la synthèse de la grille AE étaient inatteignables à la souris. | ✅ corrigé (§5.6) |
+| **A11** | 🟠 Majeur | **Les écoutes AS semblaient absentes de l'historique.** La feuille réservait 60 lignes à la grille AE puis 60 à la grille AS : avec 5 audits AE, le premier audit AS se retrouvait **ligne 64, après 55 lignes vides**. À l'écran, seule la partie AE était visible. La donnée était juste, la mise en page la rendait introuvable. | Les appels sortants paraissaient non pris en compte alors qu'ils l'étaient. | ✅ corrigé (§3) |
 | **A9** | 🔵 Mineur | Cible 80 % réécrite en dur dans ~130 formules ; bandeau « A. ÉVALUATION DU FOND » absent de la grille AE (les deux grilles n'avaient pas la même structure) ; ligne « STATUT OBJECTIF » absente de la grille AS ; cellule `F9` « Sélection de semaine » inutilisée. | Maintenance. | ✅ corrigé (§5.3-5.4) |
 
 ---
@@ -82,16 +83,22 @@ Dix anomalies, toutes corrigées dans le livrable.
 La feuille est désormais **100 % calculée** : plus aucune saisie. Elle est dimensionnée pour
 les 60 colonnes d'évaluation de chaque grille.
 
-| Lignes | Source |
-|---|---|
-| 4 → 63 | `Grille AE`, évaluations 1 à 60 (colonnes G → BN) |
-| 64 → 123 | `Grille AS`, évaluations 1 à 60 (colonnes G → BN) |
+**Architecture en deux temps** (correction de l'anomalie A11) :
 
-Chaque ligne se remplit dès qu'un **nom d'agent** est sélectionné dans la colonne
-correspondante de la grille ; sinon elle reste vide.
+1. Une feuille technique **masquée**, `Données grilles`, porte les formules sources : 60 lignes
+   pour la grille AE puis 60 pour la grille AS, plus une clé de tri et un rang.
+2. L'onglet visible `Historique AE AS` n'est qu'une **vue** de cette feuille : une seule liste
+   continue, **AE et AS mélangés**, triée de l'écoute la plus récente à la plus ancienne, sans
+   aucune ligne vide entre les deux types.
 
-Mécanique : `INDEX(plage_ligne_grille ; 1 ; n° d'évaluation)` — pas de `INDIRECT` volatil,
-pas de macro, le classeur reste un `.xlsx` standard.
+Chaque ligne apparaît dès qu'un **nom d'agent** est sélectionné dans une colonne de l'une des
+deux grilles. Un bandeau en haut de feuille affiche en permanence
+`Total : n audits · AE : x · AS : y`, et la colonne « Type d'appel » est colorée (bleu pour AE,
+orange pour AS) pour que le mélange se lise d'un coup d'œil.
+
+Mécanique : `INDEX(plage_ligne_grille ; 1 ; n° d'évaluation)` côté source, puis
+`INDEX(... ; EQUIV(rang ; colonne des rangs ; 0))` côté vue — pas de `INDIRECT` volatil,
+pas de macro, pas de fonction matricielle, le classeur reste un `.xlsx` standard.
 
 **Colonnes conservées à l'identique** (A→N) : Date d'écoute, Nom de l'Agent, LOG Agent,
 Type d'appel, Objet de l'appel, DMC (min), Moyenne Fond, Moyenne Forme, Score Global,
@@ -257,14 +264,18 @@ l'historique et de la synthèse pointent `'KPI Agents'!$E$5` (cible) et `'KPI Ag
 
 ## 6. Vérification
 
-- Recalcul complet du classeur : **5 022 formules, 0 erreur**.
+- Recalcul complet du classeur : **7 663 formules, 0 erreur**.
 - Les 6 audits historiques du fichier d'origine sont reproduits à l'identique (scores 0,88 /
   0,605 / 1 / 1 / 0,65 / 1), après l'insertion de ligne dans la grille AE.
+- Historique fusionné vérifié : les 6 audits se suivent en lignes 4 à 9, dans l'ordre
+  01/09 (AE) · 31/08 (AE) · **28/08 (AS)** · 01/08 (AE ×3), sans ligne vide intercalée.
+  Les moyennes de la synthèse, du tableau KPI et de la fiche agent sont inchangées après ce
+  passage en vue triée.
 - Sélection par **log HERMES** testée de bout en bout : saisir `3071` sans nom résout
   « BATTAL SALMA », rang 1/5, 1 audit dont **0 exploitable** (complétude 8 %).
 - Conservé dans le livrable, contrôlé dans le XML : 6 listes déroulantes des grilles (dont les
   3 listes inter-feuilles que la librairie Python supprime et que `reinject_dv.py` restaure),
-  14 blocs de mise en forme conditionnelle, **12 graphiques**.
+  15 blocs de mise en forme conditionnelle, **12 graphiques**.
 - Un attribut `xr:uid` réinjecté depuis le fichier d'origine référençait un espace de noms non
   déclaré par le générateur : XML techniquement invalide qu'Excel pouvait refuser d'ouvrir.
   Il est désormais retiré, et `reinject_dv.py` relit le classeur après écriture pour le vérifier.
@@ -274,7 +285,9 @@ l'historique et de la synthèse pointent `'KPI Agents'!$E$5` (cible) et `'KPI Ag
 ## 7. Points d'attention pour l'exploitation
 
 1. **Ne rien saisir en dehors des grilles AE/AS et des cellules jaunes.** Toutes les autres
-   feuilles sont calculées.
+   feuilles sont calculées. Trois feuilles sont masquées car purement techniques :
+   `LOG Agent`, `Objet&TYP` et `Données grilles` (clic droit sur un onglet → Afficher, si
+   besoin de les consulter).
 2. **La complétude est le garde-fou**, et il est désormais actif : le seuil se règle en
    `'KPI Agents'!$F$5` (80 % par défaut). L'historique marque chaque audit `Oui` / `Non` en
    colonne « Audit exploitable », et les tableaux comptent les deux séparément. Sur les données
