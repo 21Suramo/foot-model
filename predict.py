@@ -21,10 +21,16 @@ réelles. Pour chaque affiche du week-end, il :
 
 `sync-results` pose aussi, sur chaque pari théorique réglé, son **CLV**
 (closing line value) : l'écart entre la cote prise et la cote de clôture
-retrouvée dans `matches.odds_*`. Le ROI a besoin de ~100 paris pour dire
-quelque chose (variance du foot) ; le CLV converge beaucoup plus vite et dit
-si un pari isolé — encore trop tôt pour le ROI — avait une vraie value ou une
-cote simplement mauvaise.
+retrouvée dans `matches.odds_*`, **et seulement si cette clôture est une ligne
+sharp** (`CLV_SHARP_SOURCES`) — contre une moyenne de books ou une ouverture,
+ce serait une autre grandeur publiée sous le nom de CLV. Le ROI a besoin de
+~100 paris pour dire quelque chose (variance du foot) ; le CLV converge
+beaucoup plus vite et dit si un pari isolé — encore trop tôt pour le ROI —
+avait une vraie value ou une cote simplement mauvaise.
+
+Les écarts publiés (ici comme dans les rapports de backtest) portent leur
+intervalle de confiance bootstrap (`bootstrap.py`) : un Δ vs marché dont l'IC
+contient 0 ne dit rien, et c'est le cas normal sur quelques dizaines de matchs.
 
 Usage :
     python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \

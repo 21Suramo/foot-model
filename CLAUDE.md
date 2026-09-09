@@ -197,9 +197,12 @@ python -m unittest discover -s tests # tests unitaires
 - `model.py` — Dixon-Coles : MLE pondérée (gradient analytique), shrinkage
   ridge des équipes à faible historique, grille de scores 7×7 + probas 1N2.
   `backtest.py` expose aussi les trois démargeages (`demargin_proportional`,
-  `demargin_power`, `demargin_shin`, registre `DEMARGIN_METHODS`) ; le backtest
-  M3/M3.5 garde `power` pour sa colonne « Marché » — changer la définition du
-  marché après lecture du test reviendrait à bouger la référence a posteriori.
+  `demargin_power`, `demargin_shin`, registre `DEMARGIN_METHODS`) ; les
+  backtests (M3/M3.5 et `backtest_blend.py`) gardent `power` pour leur colonne
+  « Marché » — changer la définition du marché après lecture du test
+  reviendrait à bouger la référence a posteriori, et `devig_check.py` montre de
+  toute façon que le choix ne déplace pas le Brier. Seule la production passe à
+  Shin.
 - `backtest.py` — protocole walk-forward : `--tune` (fige ξ dans
   `data/xi_frozen.json`), `--run` (table `predictions`), `--shuffle-test`
   (anti-fuite). Le fichier ξ figé ne doit jamais être régénéré après le test.
