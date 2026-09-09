@@ -19,6 +19,13 @@ réelles. Pour chaque affiche du week-end, il :
    relisible par le skill) et produit un **rapport de calibration mensuel**
    — le monitoring continue en conditions réelles.
 
+`sync-results` pose aussi, sur chaque pari théorique réglé, son **CLV**
+(closing line value) : l'écart entre la cote prise et la cote de clôture
+retrouvée dans `matches.odds_*`. Le ROI a besoin de ~100 paris pour dire
+quelque chose (variance du foot) ; le CLV converge beaucoup plus vite et dit
+si un pari isolé — encore trop tôt pour le ROI — avait une vraie value ou une
+cote simplement mauvaise.
+
 Usage :
     python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
         [--date 2026-08-15] [--odds 1.85,3.6,4.4 --odds 1.88,3.55,4.3] \
@@ -458,20 +465,33 @@ def log_prediction(path, res, no_stake=False):
     return entry
 
 
-def settle_entry(entry, actual, actual_ht=None):
+def settle_entry(entry, actual, actual_ht=None, closing_odds=None):
     """Pose le résultat réel sur une entrée et règle ses paris théoriques.
 
     Un pari déjà réglé (champ `realized_pct` présent) n'est jamais recalculé —
-    le P&L d'un match est figé une fois posé."""
+    le P&L d'un match est figé une fois posé. Idem pour `clv_pct` : une fois
+    posé il ne bouge plus, même si settle_entry est rappelé sans closing_odds
+    (ex: `record_result` manuel, qui n'a pas accès à football.db).
+
+    closing_odds, quand fourni (par sync_results, seul appelant qui a accès à
+    la base), est {"home":.., "draw":.., "away":.., "source":..} — les cotes
+    de clôture de matches.odds_* pour ce match. On pose alors sur chaque pari
+    théorique son CLV (closing line value) : l'écart entre la cote prise et
+    cette clôture. C'est la mesure qui répond à la question qu'un ROI sur
+    quelques dizaines de paris ne peut pas trancher — le pari avait-il une
+    vraie value, ou la cote prise était-elle simplement mauvaise/périmée ?"""
     entry["actual_score"] = actual
     entry["actual_ht"] = actual_ht
+    if closing_odds is not None:
+        entry["closing_odds"] = closing_odds
     winner = ISSUES[_outcome_index_score(actual)]
     for bet in entry.get("bets") or []:
-        if "realized_pct" in bet:
-            continue
-        stake, odds = float(bet["stake_pct"]), float(bet["odds"])
-        gain = stake * (odds - 1.0) if bet["issue"] == winner else -stake
-        bet["realized_pct"] = round(gain, 6)
+        if "realized_pct" not in bet:
+            stake, odds = float(bet["stake_pct"]), float(bet["odds"])
+            gain = stake * (odds - 1.0) if bet["issue"] == winner else -stake
+            bet["realized_pct"] = round(gain, 6)
+        if "clv_pct" not in bet and closing_odds and closing_odds.get(bet["issue"]):
+            bet["clv_pct"] = round(float(bet["odds"]) / float(closing_odds[bet["issue"]]) - 1.0, 6)
     return entry
 
 
@@ -545,7 +565,7 @@ def find_actual_result(conn, league, home, away, date_iso, tolerance=SYNC_TOLERA
     lo = (target - datetime.timedelta(days=tolerance)).isoformat()
     hi = (target + datetime.timedelta(days=tolerance)).isoformat()
     rows = conn.execute(
-        "SELECT date, fthg, ftag, hthg, htag FROM matches "
+        "SELECT date, fthg, ftag, hthg, htag, odds_h, odds_d, odds_a, odds_source FROM matches "
         "WHERE league = ? AND home = ? AND away = ? AND fthg IS NOT NULL "
         "AND ftag IS NOT NULL AND date BETWEEN ? AND ?",
         (league, home, away, lo, hi)).fetchall()
@@ -585,9 +605,14 @@ def sync_results(conn, path, as_of=None):
             continue
         actual_ht = (f"{row['hthg']}-{row['htag']}"
                      if row["hthg"] is not None and row["htag"] is not None else None)
-        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht)
+        closing = None
+        if row["odds_h"] is not None and row["odds_d"] is not None and row["odds_a"] is not None:
+            closing = {"home": row["odds_h"], "draw": row["odds_d"], "away": row["odds_a"],
+                      "source": row["odds_source"]}
+        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht, closing)
         synced.append({"match": e["match"], "date": e["date"],
-                       "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift})
+                       "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift,
+                       "bets_clv": [b["clv_pct"] for b in (e.get("bets") or []) if "clv_pct" in b]})
     if synced:
         save_journal(path, entries)
     return synced, pending
@@ -793,6 +818,64 @@ def roi_section(settled):
     return lines
 
 
+# --- CLV (closing line value) des paris théoriques -------------------------
+#
+# Le ROI a besoin de ~100 paris réglés pour dire quelque chose (variance du
+# foot). Le CLV — l'écart entre la cote prise et la cote de clôture — converge
+# beaucoup plus vite : ce n'est pas un pari gagné ou perdu (bruit binaire),
+# c'est un mouvement de prix continu. C'est la seule mesure disponible
+# aujourd'hui pour juger un pari isolé (ex: une grosse cote sur un match qui
+# n'est pas encore réglé) sans attendre un échantillon massif.
+
+CLV_MIN_BETS = 20   # bien plus bas que ROI_MIN_BETS : le CLV converge plus vite,
+                     # mais reste indicatif en-deçà de ce seuil.
+
+
+def clv_summary(settled):
+    """(n, clv_moyen, taux_positif) sur les paris dont la clôture est connue."""
+    vals = [float(b["clv_pct"]) for e in settled for b in (e.get("bets") or [])
+            if "clv_pct" in b]
+    if not vals:
+        return 0, None, None
+    n = len(vals)
+    return n, sum(vals) / n, sum(1 for v in vals if v > 0) / n
+
+
+def clv_section(settled):
+    """Lignes markdown de la section « CLV (closing line value) »."""
+    n, avg, positive = clv_summary(settled)
+    lines = ["## CLV (closing line value)", "",
+             "Écart entre la cote prise et la cote de clôture (`matches.odds_*`, "
+             "posée par `sync-results`) sur chaque pari théorique réglé : "
+             "`clv_pct = cote_prise / cote_clôture − 1`. Positif = la cote a "
+             "raccourci après la prise (le pari devançait le marché) ; négatif "
+             "= elle s'est détendue (la « value » vue au moment du pari a fondu, "
+             "voire n'en était pas une). Le CLV converge plus vite que le ROI "
+             "réel — c'est le premier signal à lire sur un petit échantillon.",
+             ""]
+    if not n:
+        lines += ["Aucun pari réglé avec cote de clôture connue : soit aucun "
+                  "pari théorique n'a encore de résultat, soit la clôture était "
+                  "absente en base pour ces matchs (`odds_h/d/a` NULL).", ""]
+        return lines
+    lines += [f"- {n} pari(s) avec clôture connue — CLV moyen {avg:+.2%}, "
+              f"positif sur {positive:.0%} des paris."]
+    if n < CLV_MIN_BETS:
+        lines.append(f"- ⚠ {n} pari(s) (< {CLV_MIN_BETS}) : lecture indicative — "
+                     f"le CLV converge vite mais pas instantanément.")
+    elif avg < 0:
+        lines.append("- ⚠ CLV moyen négatif sur un échantillon exploitable : les "
+                     "cotes prises perdent en moyenne de la valeur avant la "
+                     "clôture — signe que l'edge apparent au moment du pari "
+                     "n'était probablement pas réel.")
+    else:
+        lines.append("- CLV moyen positif sur un échantillon exploitable : "
+                     "cohérent avec un vrai edge (à confirmer par le ROI réel "
+                     "une fois n ≥ 100).")
+    lines.append("")
+    return lines
+
+
 def build_calibration_report(path, month_filter=None):
     settled = [e for e in load_journal(path) if e.get("actual_score")]
     if month_filter:
@@ -831,6 +914,7 @@ def build_calibration_report(path, month_filter=None):
 
     lines += freshness_section(settled)
     lines += roi_section(settled)
+    lines += clv_section(settled)
 
     # Focus sur le dernier mois (ou le mois filtré)
     focus = month_filter or sorted(by_month)[-1]
@@ -996,6 +1080,9 @@ def cmd_sync_results(args, conn):
     for s in synced:
         note = f"  (joué à {s['shift']:+d} j de la date prévue)" if s["shift"] else ""
         print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}")
+        for clv in s.get("bets_clv") or []:
+            tag = "bat la clôture" if clv > 0 else "clôture plus favorable" if clv < 0 else "= clôture"
+            print(f"        CLV {clv:+.2%} ({tag})")
     if pending:
         print("\nEn attente de données source :")
         for p in pending:
