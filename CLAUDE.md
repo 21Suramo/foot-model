@@ -335,6 +335,39 @@ la source ne sont pas des erreurs).
   marché — un CLV moyen négatif sur un échantillon exploitable est un signal
   d'alerte plus rapide qu'un ROI qui restera non-informatif encore des mois.
 
+## Protocole de revue CLV (pré-enregistré le 2026-09-09)
+
+Filtre : paris réglés avec `odds_source = pinnacle_close` uniquement
+(clv_skipped exclus, cf. section CLV).
+
+- **Estimations de calendrier (rythme actuel ~4–5 paris Pinnacle / semaine) :**
+  - n = 50 : cible indicative fin octobre 2026
+  - n = 100 : cible indicative mi-février 2027
+  - Ces dates sont indicatives seulement. Le gate est le compteur réel de
+    paris `pinnacle_close` réglés dans le journal, pas la date : si n=100
+    est atteint avant ou après la cible, c'est le n réel qui déclenche la
+    revue, jamais le calendrier.
+
+- **n = 50 — checkpoint informatif.**
+  Vérifier uniquement :
+  (a) le spread de l'IC bootstrap se resserre bien en ~1/√n (attendu
+  ±0,55 % → ~±0,30 %) ;
+  (b) le point estimate ne dérive pas de façon marquée par rapport à +1,78 %.
+  Aucun changement de statut dans le verdict, aucune décision P2.
+  Consigner le chiffre dans reports/, rien d'autre.
+
+- **n = 100 — point de décision pré-engagé.**
+  Ré-exécuter le protocole bootstrap à l'identique (même appariement par
+  match, graine figée). C'est le seul moment où :
+  1. le critère <2 % est réévalué sur l'IC complet (et non plus sur le
+     point estimate) ;
+  2. la question P2 (stacking) est rouverte, dans un sens ou dans l'autre.
+
+Règle d'étanchéité : la consultation passive des rapports hebdomadaires
+générés par la CI est autorisée (suivi de routine). Aucune décision produit
+ni modification de code (ajustement de seuils, déblocage de P2, retuning)
+ne peut être motivée par la valeur de l'IC
+
 ## Conventions
 
 - Les données (`data/`) ne sont pas versionnées ; la base se reconstruit
