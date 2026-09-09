@@ -94,6 +94,22 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   la composition est fournie à la main (recherche web via le skill) ; c'est
   un ajustement en aval du modèle M3.5 figé, pas un re-tuning de ses
   hyperparamètres — `data/m35_frozen.json` n'est jamais régénéré pour ça.
+- **Fatigue/congestion (Δjours) : investigué, PAS construit.** Avant de
+  lancer un chantier de calibration (tune/validation/test comme M3/M3.5), la
+  roadmap demandait de vérifier que le signal existe : les équipes à ≤3 jours
+  de repos sous-performent-elles significativement par rapport à ce que le
+  modèle M3.5 (sans aucune notion de repos) prédit déjà ?
+  `fatigue_signal_check.py` répond par un walk-forward identique à
+  `backtest.walk_forward` (même garde anti-fuite), restreint à
+  1920+VALIDATION (jamais le TEST), comparant le résidu (buts réels - λ) par
+  tranche de repos sur les 4 axes attaque/défense × domicile/extérieur.
+  **Résultat : aucun écart significatif** (|z| < 1 partout, ~250 matchs à
+  repos court sur 13 242 observations, voir
+  [reports/fatigue_signal_check.md](reports/fatigue_signal_check.md)).
+  Conclusion : la calibration fatigue N'A PAS été construite — l'aurait été,
+  elle aurait figé du bruit. Ne pas relancer ce chantier sans donnée
+  nouvelle (davantage de saisons) ; ne pas le confondre avec un simple oubli
+  à rattraper.
 
 ## Commandes
 
@@ -112,6 +128,7 @@ python predict.py result --match "Arsenal-Chelsea" --actual 2-1   # enregistre u
 python pipeline.py --update && python predict.py sync-results  # résultats réels depuis football.db
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
+python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -177,6 +194,14 @@ python -m unittest discover -s tests # tests unitaires
   valeur du garde-fou : sur ces données le marché bat le modèle à tous les âges,
   mais la vraie cible est une cote scrapée fausse/périmée que football-data ne
   peut pas simuler — ne pas conclure « le modèle ne sert à rien ».
+- `fatigue_signal_check.py` — vérifie AVANT toute calibration si le signal
+  fatigue/congestion existe : walk-forward identique à
+  `backtest.walk_forward` sur 1920+VALIDATION (jamais le TEST), résidu
+  (buts réels - λ M3.5) par tranche de repos (`rest_bucket`, seuil ≤3j) sur
+  4 axes attaque/défense × domicile/extérieur, z-test court vs reste.
+  Verdict → `reports/fatigue_signal_check.md`. Résultat actuel : aucun
+  signal détecté — la calibration (walk-forward tune/validation/test comme
+  M3/M3.5) n'a donc PAS été construite, elle figerait du bruit.
 - `.github/workflows/tests.yml` — CI : sur push/PR vers `main`, installe
   `requirements.txt`, lance `python -m unittest discover -s tests` puis
   `python check.py` ; échoue si l'un des deux retourne un code non nul.

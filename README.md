@@ -336,6 +336,24 @@ seule.
 > l'utilité du modèle, pas sa valeur réelle. Détail dans
 > [reports/m5_blend_backtest.md](reports/m5_blend_backtest.md).
 
+### Signal fatigue/congestion : investigué, pas construit
+
+```bash
+python fatigue_signal_check.py   # -> reports/fatigue_signal_check.md
+```
+
+Avant de lancer une calibration (protocole tune/validation/test comme
+M3/M3.5), vérifie que le signal existe : les équipes à ≤3 jours de repos
+sous-performent-elles significativement par rapport à ce que le modèle
+M3.5 (sans aucune notion de repos) prédit déjà ? Walk-forward identique à
+`backtest.walk_forward` sur 1920+validation (jamais le test), résidu (buts
+réels − λ) par tranche de repos sur 4 axes attaque/défense × domicile/
+extérieur.
+
+**Résultat : aucun écart significatif** (voir
+[reports/fatigue_signal_check.md](reports/fatigue_signal_check.md)) — la
+calibration fatigue n'a donc pas été construite, elle figerait du bruit.
+
 ## Résultats
 
 4338 matchs de test (saisons 2022-23 à 2025-26, 3 ligues), refit hebdomadaire.
