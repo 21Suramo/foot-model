@@ -45,6 +45,20 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   plancher du poids marché) sont verrouillés par
   `tests/test_predict.py::TestRiskParameters::test_risk_parameters_are_intentional` :
   les changer fait échouer un test, exprès.
+- **M5.2 — CLV (closing line value) des paris théoriques : implémenté.** Le
+  ROI a besoin d'environ 100 paris réglés pour dire quoi que ce soit (variance
+  du foot) ; en dessous, impossible de savoir si un pari isolé (une grosse
+  cote sur un match qui n'est pas encore réglé) avait une vraie value ou était
+  simplement une cote pourrie. `predict.py sync-results` pose désormais, sur
+  chaque pari théorique réglé, son CLV : l'écart entre la cote prise
+  (`bets[].odds`) et la cote de clôture retrouvée dans `matches.odds_*`
+  (`clv_pct = cote_prise / cote_clôture − 1`, positif = la cote a raccourci
+  après la prise). Le CLV converge beaucoup plus vite que le ROI — c'est le
+  premier signal à lire sur un petit échantillon, avant que le ROI réel ne
+  devienne exploitable. Nouvelle section « CLV (closing line value) » dans
+  `reports/production_calibration.md`. Le CLV n'est posé que par
+  `sync-results` (qui a accès à `football.db`) — `predict.py result`, la
+  saisie manuelle, ne le renseigne pas.
 
 ## Commandes
 
@@ -104,9 +118,11 @@ python -m unittest discover -s tests # tests unitaires
   calendrier) ; ce qui reste introuvable est listé « en attente de données
   source » et jamais deviné. Le rapport ajoute une section par fraîcheur des
   cotes (alerte si le bucket périmées dérive de plus de 3 points relatifs vs le
-  bucket fraîches, n ≥ 15 requis dans les deux) et une section ROI théorique
-  (avertissement sous 100 paris réglés). La colonne « Δ vs marché » des deux
-  tables est un écart **relatif** — même formule que « Écart rel. marché » de
+  bucket fraîches, n ≥ 15 requis dans les deux), une section ROI théorique
+  (avertissement sous 100 paris réglés) et une section CLV (`clv_pct` par pari,
+  posé par `sync-results` depuis `matches.odds_*` — avertissement sous 20 paris
+  avec clôture connue). La colonne « Δ vs marché » des deux premières tables
+  est un écart **relatif** — même formule que « Écart rel. marché » de
   `report35.py` — donc directement comparable au +1,78 % du backtest.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
@@ -154,6 +170,10 @@ la source ne sont pas des erreurs).
 - **Avant toute augmentation du plafond Kelly ou de la fraction** :
   exiger au minimum 100 paris réglés dans le ROI réel avec un ROI positif
   net de la marge — sinon rester sur les valeurs actuelles.
+- **À chaque rapport mensuel, lire le CLV avant le ROI** : il converge plus
+  vite (n ≥ 20 déjà indicatif) et dit si les paris pris ont ou non devancé le
+  marché — un CLV moyen négatif sur un échantillon exploitable est un signal
+  d'alerte plus rapide qu'un ROI qui restera non-informatif encore des mois.
 
 ## Conventions
 

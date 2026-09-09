@@ -532,6 +532,114 @@ class TestBetsAndRoi(unittest.TestCase):
         self.assertIn(f"{predict.ROI_MIN_BETS} pari(s) réglé(s)", text)
 
 
+class TestClv(unittest.TestCase):
+    """CLV (closing line value) : l'écart entre la cote prise et la clôture."""
+
+    def test_settle_entry_computes_clv_from_closing_odds(self):
+        entry = {"bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}]}
+        closing = {"home": 4.8, "draw": 3.4, "away": 1.9, "source": "pinnacle_close"}
+        predict.settle_entry(entry, "1-2", closing_odds=closing)
+        self.assertAlmostEqual(entry["bets"][0]["clv_pct"], 5.1 / 4.8 - 1.0, places=6)
+        self.assertEqual(entry["closing_odds"], closing)
+
+    def test_negative_clv_when_price_drifted_the_other_way(self):
+        entry = {"bets": [{"issue": "home", "odds": 1.8, "stake_pct": 0.02}]}
+        closing = {"home": 2.1, "draw": 3.2, "away": 3.6}
+        predict.settle_entry(entry, "1-0", closing_odds=closing)
+        self.assertLess(entry["bets"][0]["clv_pct"], 0.0)
+
+    def test_no_closing_odds_leaves_clv_absent(self):
+        entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01}]}
+        predict.settle_entry(entry, "1-0")
+        self.assertNotIn("clv_pct", entry["bets"][0])
+        self.assertNotIn("closing_odds", entry)
+
+    def test_clv_never_recomputed_once_set(self):
+        entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                           "clv_pct": 0.05}]}
+        predict.settle_entry(entry, "1-0", closing_odds={"home": 9.9})
+        self.assertEqual(entry["bets"][0]["clv_pct"], 0.05)
+
+    def test_missing_issue_in_closing_odds_leaves_clv_absent(self):
+        entry = {"bets": [{"issue": "draw", "odds": 3.4, "stake_pct": 0.01}]}
+        predict.settle_entry(entry, "1-0", closing_odds={"home": 2.0, "away": 3.5})
+        self.assertNotIn("clv_pct", entry["bets"][0])
+
+    def test_sync_results_fills_clv_from_matches_table(self):
+        conn = db.connect(":memory:")
+        db.upsert_match(conn, {"date": "2026-09-14", "league": "E0", "season": "2627",
+                               "home": "Leeds", "away": "Newcastle",
+                               "fthg": 1, "ftag": 2,
+                               "odds_h": 4.8, "odds_d": 3.4, "odds_a": 1.9,
+                               "odds_source": "pinnacle_close"})
+        conn.commit()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                 "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                 "predicted_score": "1-2",
+                 "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}],
+                 "actual_score": None, "actual_ht": None,
+                 "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}]))
+            synced, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 9, 20))
+            self.assertAlmostEqual(synced[0]["bets_clv"][0], 5.1 / 4.8 - 1.0, places=6)
+            entry = json.loads(path.read_text())[0]
+            self.assertAlmostEqual(entry["bets"][0]["clv_pct"], 5.1 / 4.8 - 1.0, places=6)
+            self.assertEqual(entry["closing_odds"]["source"], "pinnacle_close")
+        conn.close()
+
+    def test_sync_results_without_closing_odds_in_db_skips_clv(self):
+        conn = db.connect(":memory:")
+        db.upsert_match(conn, {"date": "2026-09-14", "league": "E0", "season": "2627",
+                               "home": "Leeds", "away": "Newcastle", "fthg": 1, "ftag": 2})
+        conn.commit()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                 "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                 "predicted_score": "1-2",
+                 "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}],
+                 "actual_score": None, "actual_ht": None,
+                 "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}]))
+            predict.sync_results(conn, path, as_of=datetime.date(2026, 9, 20))
+            entry = json.loads(path.read_text())[0]
+            self.assertNotIn("clv_pct", entry["bets"][0])
+        conn.close()
+
+    def test_clv_section_reports_average_and_small_sample_warning(self):
+        settled = [{"bets": [{"issue": "home", "odds": 2.0, "stake_pct": 0.01,
+                              "clv_pct": 0.03}]},
+                  {"bets": [{"issue": "away", "odds": 3.0, "stake_pct": 0.01,
+                              "clv_pct": -0.01}]}]
+        lines = predict.clv_section(settled)
+        text = "\n".join(lines)
+        self.assertIn("## CLV (closing line value)", text)
+        self.assertIn("2 pari(s) avec clôture connue", text)
+        self.assertIn("indicative", text)
+
+    def test_clv_section_without_any_clv_data(self):
+        text = "\n".join(predict.clv_section([{"bets": []}]))
+        self.assertIn("Aucun pari réglé avec cote de clôture connue", text)
+
+    def test_report_includes_clv_section(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            entry = {
+                "match": "A-B", "date": "2026-08-15", "competition": "E0",
+                "probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                "predicted_score": "2-1",
+                "bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                          "realized_pct": 0.022, "clv_pct": 0.02}],
+                "actual_score": "2-1", "actual_ht": None, "meta": {"model": "M5"},
+            }
+            path.write_text(json.dumps([entry]))
+            text, _ = predict.build_calibration_report(path)
+        self.assertIn("## CLV (closing line value)", text)
+        self.assertIn("CLV moyen +2.00%", text)
+
+
 class TestRps(unittest.TestCase):
     def test_perfect_prediction_zero_rps(self):
         self.assertAlmostEqual(predict.rps((1.0, 0.0, 0.0), 0), 0.0)

@@ -25,6 +25,12 @@ Découpage sur `meta.odds_age_days` aux seuils du pont marché/modèle (`market_
 
 Aucun pari réglé sur la période : soit les prédictions n'avaient pas de cote exploitable, soit leurs résultats ne sont pas encore synchronisés (`python predict.py sync-results`).
 
+## CLV (closing line value)
+
+Écart entre la cote prise et la cote de clôture (`matches.odds_*`, posée par `sync-results`) sur chaque pari théorique réglé : `clv_pct = cote_prise / cote_clôture − 1`. Positif = la cote a raccourci après la prise (le pari devançait le marché) ; négatif = elle s'est détendue (la « value » vue au moment du pari a fondu, voire n'en était pas une). Le CLV converge plus vite que le ROI réel — c'est le premier signal à lire sur un petit échantillon.
+
+Aucun pari réglé avec cote de clôture connue : soit aucun pari théorique n'a encore de résultat, soit la clôture était absente en base pour ces matchs (`odds_h/d/a` NULL).
+
 ## Focus 2026-08
 
 - 28 match(s) réglé(s), Brier 0.5214, issues correctes 61%, scores exacts 7%.
