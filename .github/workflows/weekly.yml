@@ -33,6 +33,15 @@ jobs:
       - name: Rapport de calibration
         run: python predict.py report
 
+      - name: Archiver football.db + le journal (backup secondaire)
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-backup
+          path: |
+            data/football.db
+            data/production_journal.json
+          retention-days: 90
+
       - name: Committer si le journal ou le rapport ont changé
         run: |
           git config user.name "github-actions[bot]"

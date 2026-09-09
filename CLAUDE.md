@@ -153,6 +153,21 @@ python -m unittest discover -s tests # tests unitaires
   valeur du garde-fou : sur ces données le marché bat le modèle à tous les âges,
   mais la vraie cible est une cote scrapée fausse/périmée que football-data ne
   peut pas simuler — ne pas conclure « le modèle ne sert à rien ».
+- `.github/workflows/tests.yml` — CI : sur push/PR vers `main`, installe
+  `requirements.txt`, lance `python -m unittest discover -s tests` puis
+  `python check.py` ; échoue si l'un des deux retourne un code non nul.
+  Pas de secret réseau requis (fixtures locales, `football.db` versionnée).
+- `.github/workflows/weekly.yml` — automatise la partie « lundi suivant »
+  de la routine de suivi ci-dessous : `pipeline.py --update` puis
+  `predict.py sync-results` puis `predict.py report`, commit+push de
+  `data/production_journal.json` et `reports/production_calibration.md`
+  s'ils ont changé. Archive aussi `football.db` + le journal en artefact
+  GitHub Actions (rétention 90 j) comme backup secondaire léger — ne sort
+  pas du compte/repo GitHub unique, mais protège d'une corruption locale
+  des fichiers suivis en histoire git. La génération des prédictions de la
+  semaine (`predict.py match --fixture ...`) reste manuelle : dépend des
+  cotes fraîches récupérées via le skill football-match-predictor
+  (recherche web), pas automatisable sans source de cotes programmatique.
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2026-27.
 
@@ -172,8 +187,10 @@ la source ne sont pas des erreurs).
 - **Chaque lundi suivant** (avant de regénérer les prédictions de la
   semaine d'après) : `python pipeline.py --update` puis
   `python predict.py sync-results` pour clore les matchs de la semaine
-  précédente. Vérifier le résumé "en attente de données source" — s'il
-  grossit, creuser la source (football-data.co.uk en retard, alias manquant).
+  précédente. **Automatisé** depuis `.github/workflows/weekly.yml` (cron
+  lundi 06:00 UTC) — vérifier quand même le résumé "en attente de données
+  source" dans le run Actions ou en relançant en local ; s'il grossit,
+  creuser la source (football-data.co.uk en retard, alias manquant).
 - **1er de chaque mois** : `python predict.py report`, committer
   reports/production_calibration.md, comparer le delta vs marché du mois
   au chiffre du backtest (+1,78 %). Si le delta réel est significativement
