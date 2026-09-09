@@ -59,6 +59,19 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   `reports/production_calibration.md`. Le CLV n'est posé que par
   `sync-results` (qui a accès à `football.db`) — `predict.py result`, la
   saisie manuelle, ne le renseigne pas.
+- **M5.3 — traçabilité des matchs sans cote marché : implémenté.** Un match
+  parti en modèle pur (aucune cote fournie) ne laissait dans le journal qu'un
+  `market_weight: 0.0` muet, impossible à interpréter a posteriori : cotes pas
+  encore ouvertes chez les books (structurel, rien à corriger) ou recherche
+  infructueuse/alias manquant (à corriger) se ressemblaient. `predict.py`
+  enregistre désormais `meta.no_odds_reason` sur ces entrées :
+  `not_yet_published` / `lookup_failed` / `margin_rejected` déclarés par
+  `--no-odds-reason` (ou le champ homonyme de l'export du skill,
+  `--from-skill-json`) ; `slate_odds_ignored` déduit quand `--odds` est ignoré
+  sur un slate (`--fixture` répété) ; `not_provided` = raison non précisée,
+  jamais devinée. `predict.py match` récapitule en fin de run les affiches
+  parties sans cote, groupées par raison. Purement additif — n'interagit pas
+  avec le CLV par pari de M5.2 (deux champs distincts, aucun recouvrement).
 
 ## Commandes
 
@@ -112,8 +125,13 @@ python -m unittest discover -s tests # tests unitaires
   (fichier ou `-`/stdin) lit l'export `football-match-predictor.skill-export/v1`
   et le mappe sur les arguments (`league/home/away/odds_1x2/match_date/odds_date`) —
   sortie identique au passage manuel ; `ou` et `final_probs_1x2` ignorés,
-  `league` hors {E0,SP1,F1} → erreur. Sous-commande `sync-results` : remplit
-  `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
+  `league` hors {E0,SP1,F1} → erreur. `no_odds_reason` (export ou
+  `--no-odds-reason` en CLI, valeurs déclarables `not_yet_published` /
+  `lookup_failed` / `margin_rejected`) journalisé dans `meta.no_odds_reason`
+  quand aucune cote n'est fournie ; déduit à `slate_odds_ignored` si `--odds`
+  est ignoré sur un `--fixture` répété, sinon `not_provided` — jamais deviné.
+  Récapitulatif des matchs sans cote en fin de run `match`. Sous-commande
+  `sync-results` : remplit `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
   après résolution d'alias, tolérance ±2 jours sur la date (report de
   calendrier) ; ce qui reste introuvable est listé « en attente de données
   source » et jamais deviné. Le rapport ajoute une section par fraîcheur des

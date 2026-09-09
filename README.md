@@ -138,6 +138,10 @@ matchs à venir :
   calibration mensuel** (`reports/production_calibration.md`) : chaque
   prédiction et chaque résultat enregistré alimentent un suivi en conditions
   réelles, hors échantillon de backtest.
+- **Traçabilité des prédictions sans cote** : quand aucune cote n'est fournie,
+  le journal enregistre *pourquoi* (`meta.no_odds_reason`) au lieu d'un
+  `market_weight: 0.0` muet, et la fin d'un slate récapitule les affiches
+  parties en modèle pur.
 
 ## Architecture
 
@@ -264,6 +268,10 @@ cat export.json | python predict.py match --from-skill-json -
 python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --contest-points 13,50,68 --contest-exact-bonus 30
 
+# Sans cotes, en précisant la cause (journalisée dans meta.no_odds_reason)
+python predict.py match --league SP1 --home "Betis" --away "Real Madrid" \
+    --no-odds-reason not_yet_published
+
 # Enregistrer un résultat, puis produire le rapport de calibration mensuel
 python predict.py result --match "Arsenal-Chelsea" --actual 2-1
 python predict.py report            # -> reports/production_calibration.md
@@ -279,6 +287,14 @@ python predict.py report            # -> reports/production_calibration.md
   deviner.
 - **Journal automatique** : chaque prédiction est écrite dans
   `data/production_journal.json` ; ré-exécuter le même match ne duplique rien.
+- **Pourquoi pas de cote** : une prédiction sans cote marché tourne en modèle
+  pur, garde-fou marché désactivé. La cause est journalisée dans
+  `meta.no_odds_reason` — `not_yet_published`, `lookup_failed`,
+  `margin_rejected` (déclarés par `--no-odds-reason` ou par le champ homonyme
+  de l'export du skill), `slate_odds_ignored` (déduit : `--odds` ne s'applique
+  qu'à un match unique, il est ignoré sur un slate) ou `not_provided` quand rien
+  n'est déclaré. Cette dernière valeur veut dire « raison non précisée » : elle
+  n'est jamais remplacée par une cause plausible devinée après coup.
 
 ### Backtest du blend marché/modèle
 

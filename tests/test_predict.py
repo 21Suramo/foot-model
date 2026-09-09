@@ -700,6 +700,97 @@ class TestPredictMatchIntegration(unittest.TestCase):
         conn.close()
 
 
+class TestNoOddsReason(unittest.TestCase):
+    """Traçabilité des prédictions sans cote marché (meta.no_odds_reason)."""
+
+    def _mini_db(self):
+        conn = db.connect(":memory:")
+        base = datetime.date(2025, 8, 1)
+        for wk in range(20):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            hg, ag = (3, 0) if wk % 2 == 0 else (2, 1)
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Alpha", "away": "Beta", "fthg": hg, "ftag": ag})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Beta", "away": "Alpha", "fthg": 0, "ftag": 2})
+        conn.commit()
+        return conn
+
+    def _cfg(self):
+        return {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+
+    def test_default_reason_when_undeclared(self):
+        conn = self._mini_db()
+        res = predict.predict_match(conn, self._cfg(), "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {})
+        self.assertEqual(res["no_odds_reason"], predict.DEFAULT_NO_ODDS_REASON)
+        conn.close()
+
+    def test_declared_reason_is_kept(self):
+        conn = self._mini_db()
+        res = predict.predict_match(conn, self._cfg(), "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {},
+                                    no_odds_reason="lookup_failed")
+        self.assertEqual(res["no_odds_reason"], "lookup_failed")
+        conn.close()
+
+    def test_reason_none_when_odds_provided(self):
+        conn = self._mini_db()
+        res = predict.predict_match(conn, self._cfg(), "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), ["2.5,3.2,2.8"], 1, 0.65, {},
+                                    no_odds_reason="lookup_failed")
+        self.assertIsNone(res["no_odds_reason"])
+        conn.close()
+
+    def test_logged_entry_carries_reason_in_meta(self):
+        conn = self._mini_db()
+        res = predict.predict_match(conn, self._cfg(), "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {},
+                                    no_odds_reason="margin_rejected")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, res)
+            entry = json.loads(path.read_text())[0]
+        self.assertEqual(entry["meta"]["no_odds_reason"], "margin_rejected")
+        conn.close()
+
+    def test_print_prediction_shows_reason_tag(self):
+        conn = self._mini_db()
+        res = predict.predict_match(conn, self._cfg(), "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {},
+                                    no_odds_reason="not_yet_published")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            predict.print_prediction(res, self._cfg())
+        self.assertIn("[not_yet_published]", buf.getvalue())
+        conn.close()
+
+    def test_recap_empty_without_missing_odds(self):
+        self.assertEqual(predict.no_odds_recap([], 3), "")
+
+    def test_recap_groups_by_reason(self):
+        without = [
+            {"league": "E0", "home": "A", "away": "B", "date": "2026-08-15",
+             "no_odds_reason": "lookup_failed"},
+            {"league": "E0", "home": "C", "away": "D", "date": "2026-08-15",
+             "no_odds_reason": "lookup_failed"},
+            {"league": "SP1", "home": "E", "away": "F", "date": "2026-08-16",
+             "no_odds_reason": None},
+        ]
+        recap = predict.no_odds_recap(without, 5)
+        self.assertIn("3/5 match(s) sans cote marché", recap)
+        self.assertIn("[lookup_failed]", recap)
+        self.assertIn(f"[{predict.DEFAULT_NO_ODDS_REASON}]", recap)
+        self.assertIn("--no-odds-reason", recap)  # rappel affiché car un 'not_provided' traîne
+
+    def test_recap_no_hint_when_all_declared(self):
+        without = [{"league": "E0", "home": "A", "away": "B", "date": "2026-08-15",
+                   "no_odds_reason": "margin_rejected"}]
+        recap = predict.no_odds_recap(without, 1)
+        self.assertNotIn("--no-odds-reason", recap)
+
+
 class TestSkillJsonParsing(unittest.TestCase):
     def _valid(self, **over):
         doc = {
@@ -768,6 +859,20 @@ class TestSkillJsonParsing(unittest.TestCase):
         fx = predict.skill_json_to_fixture(self._valid(final_probs_1x2={"home": 9, "draw": 9, "away": 9}))
         self.assertNotIn("final_probs", fx)
 
+    def test_no_odds_reason_absent_is_fine(self):
+        fx = predict.skill_json_to_fixture(self._valid())
+        self.assertIsNone(fx["no_odds_reason"])
+
+    def test_declarable_no_odds_reason_mapped(self):
+        fx = predict.skill_json_to_fixture(self._valid(no_odds_reason="not_yet_published"))
+        self.assertEqual(fx["no_odds_reason"], "not_yet_published")
+
+    def test_non_declarable_no_odds_reason_exits(self):
+        # 'slate_odds_ignored' et 'not_provided' sont déduits par le code, pas
+        # déclarables par l'appelant — on ne devine pas une raison.
+        with self.assertRaises(SystemExit):
+            predict.skill_json_to_fixture(self._valid(no_odds_reason="not_provided"))
+
 
 class TestSkillJsonEquivalence(unittest.TestCase):
     """Le chemin --from-skill-json doit produire EXACTEMENT le même stdout que
@@ -829,6 +934,79 @@ class TestSkillJsonEquivalence(unittest.TestCase):
             ["match", "--from-skill-json", path, "--home", "X", "--no-log"])
         with self.assertRaises(SystemExit):
             args.func(args, self._mini_db())
+
+
+class TestNoOddsReasonCli(unittest.TestCase):
+    """Bout en bout CLI : --no-odds-reason jusqu'au journal, et déduction
+    automatique sur un slate dont --odds est ignoré."""
+
+    def _mini_db(self):
+        conn = db.connect(":memory:")
+        base = datetime.date(2025, 8, 1)
+        for wk in range(20):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            hg, ag = (3, 0) if wk % 2 == 0 else (2, 1)
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Alpha", "away": "Beta", "fthg": hg, "ftag": ag})
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Gamma", "away": "Delta", "fthg": hg, "ftag": ag})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Beta", "away": "Alpha", "fthg": 0, "ftag": 2})
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Delta", "away": "Gamma", "fthg": 0, "ftag": 2})
+        conn.commit()
+        return conn
+
+    def _run(self, argv, conn):
+        args = predict.build_parser().parse_args(argv)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            args.func(args, conn)
+        return buf.getvalue()
+
+    def test_cli_flag_reaches_journal(self):
+        frozen = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        orig = backtest35.frozen
+        backtest35.frozen = lambda: frozen
+        with tempfile.TemporaryDirectory() as d:
+            log = str(Path(d) / "j.json")
+            try:
+                out = self._run(["match", "--league", "E0", "--home", "Alpha", "--away", "Beta",
+                                 "--date", "2026-08-15", "--no-odds-reason", "not_yet_published",
+                                 "--log", log], self._mini_db())
+            finally:
+                backtest35.frozen = orig
+            entry = json.loads(Path(log).read_text())[0]
+        self.assertEqual(entry["meta"]["no_odds_reason"], "not_yet_published")
+        self.assertIn("[not_yet_published]", out)
+        self.assertIn("1/1 match(s) sans cote marché", out)
+
+    def test_slate_with_odds_ignored_records_reason(self):
+        frozen = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        orig = backtest35.frozen
+        backtest35.frozen = lambda: frozen
+        with tempfile.TemporaryDirectory() as d:
+            log = str(Path(d) / "j.json")
+            try:
+                out = self._run(["match", "--fixture", "E0,Alpha,Beta",
+                                 "--fixture", "E0,Gamma,Delta",
+                                 "--odds", "1.85,3.6,4.4", "--date", "2026-08-15",
+                                 "--log", log], self._mini_db())
+            finally:
+                backtest35.frozen = orig
+            entries = json.loads(Path(log).read_text())
+        self.assertEqual(len(entries), 2)
+        for e in entries:
+            self.assertEqual(e["meta"]["no_odds_reason"], "slate_odds_ignored")
+        self.assertIn("[slate_odds_ignored]", out)
+        self.assertIn("2/2 match(s) sans cote marché", out)
+
+    def test_invalid_cli_reason_rejected_by_argparse(self):
+        with self.assertRaises(SystemExit):
+            predict.build_parser().parse_args(
+                ["match", "--league", "E0", "--home", "A", "--away", "B",
+                 "--no-odds-reason", "not_provided"])
 
 
 if __name__ == "__main__":

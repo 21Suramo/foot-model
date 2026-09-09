@@ -87,6 +87,27 @@ MARGIN_MAX = 1.12       # marge > 112 % = ligne de mauvaise qualité
 
 ISSUES = ("home", "draw", "away")
 
+# Raisons documentées d'une prédiction sans cote marché (`market_probs` null).
+#
+# Sans ce champ, le journal ne garde qu'un `market_weight: 0.0` muet : impossible,
+# en relisant, de distinguer « le book n'avait pas encore ouvert la ligne à J-8 »
+# (structurel, rien à corriger) d'une erreur de mapping ou d'un alias manquant
+# (bug, à corriger). On enregistre donc la raison, sans jamais la deviner : les
+# deux dernières valeurs sont déduites par le code, les autres doivent être
+# déclarées par l'appelant (`--no-odds-reason`, ou le champ homonyme de l'export
+# du skill). Faute de déclaration, on écrit « non précisée » — jamais une raison
+# plausible inventée après coup.
+NO_ODDS_REASONS = {
+    "not_yet_published": "cotes pas encore ouvertes chez les books à cette date",
+    "lookup_failed": "recherche de cotes infructueuse (affiche introuvable, source injoignable)",
+    "margin_rejected": "cotes trouvées mais écartées en amont (marge implicite hors bornes)",
+    "not_provided": "aucune cote passée à l'appel, raison non précisée",
+    "slate_odds_ignored": "--odds ne s'applique qu'à un match unique : ignoré sur un slate",
+}
+# Ce que l'appelant a le droit de déclarer ; le reste est déduit du code.
+DECLARABLE_NO_ODDS_REASONS = ("not_yet_published", "lookup_failed", "margin_rejected")
+DEFAULT_NO_ODDS_REASON = "not_provided"
+
 
 # ---------------------------------------------------------------------------
 # Utilitaires de dates et de grille
@@ -228,7 +249,8 @@ def btts_prob(grid):
 
 
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
-                  odds_specs, odds_age_days, blend, fit_cache):
+                  odds_specs, odds_age_days, blend, fit_cache,
+                  no_odds_reason=None):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -253,12 +275,18 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
 
     market = best_odds = None
     m_weight = 0.0
+    reason = None
     fresh_note = "aucune cote fournie — modèle seul"
     if odds_specs:
         triples = parse_odds_triples(odds_specs)
         market, best_odds = market_consensus(triples)
         all_ok = all(margin_ok(t)[0] for t in triples)
         m_weight, _, fresh_note = market_weight(blend, odds_age_days, all_ok)
+    else:
+        # Modèle pur : on trace POURQUOI, sinon le journal ne garde qu'un
+        # market_weight nul qu'on ne saura plus interpréter dans trois semaines.
+        reason = no_odds_reason if no_odds_reason in NO_ODDS_REASONS else DEFAULT_NO_ODDS_REASON
+        fresh_note = f"aucune cote fournie — modèle seul ({NO_ODDS_REASONS[reason]})"
 
     if market is not None:
         final = {k: m_weight * market[k] + (1 - m_weight) * model_probs[k] for k in ISSUES}
@@ -276,7 +304,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "lam_h": lam_h, "lam_a": lam_a, "grid": grid,
         "model": model_probs, "market": market, "best_odds": best_odds,
         "final": final, "market_weight": m_weight, "fresh_note": fresh_note,
-        "odds_age_days": odds_age_days,
+        "odds_age_days": odds_age_days, "no_odds_reason": reason,
     }
 
 
@@ -298,7 +326,8 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
           f"{res['last_train_date']} (réf. {res['ref_monday']}, match prévu {res['date']}).")
     print(f"Lambdas : {home} λ={res['lam_h']:.2f} | {away} λ={res['lam_a']:.2f}")
     print(f"Pont marché/modèle : {res['fresh_note']}" +
-          (f" → poids marché {res['market_weight']:.0%}." if res["market"] else "."))
+          (f" → poids marché {res['market_weight']:.0%}." if res["market"]
+           else f" [{res.get('no_odds_reason') or DEFAULT_NO_ODDS_REASON}]."))
     print()
 
     market, model_probs, final = res["market"], res["model"], res["final"]
@@ -369,6 +398,32 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
 
     if contest is not None:
         run_contest_mode(grid, final, contest, exact_bonus, home, away)
+
+
+def no_odds_recap(without_odds, total):
+    """Récapitulatif des matchs partis sans cote marché, à la fin d'un run.
+
+    Un slate de 29 affiches défile trop vite pour qu'on remarque, ligne à ligne,
+    que 22 d'entre elles tournent en modèle pur. Sans ce bloc, l'information ne
+    ressort qu'en relisant le journal — c'est-à-dire jamais."""
+    if not without_odds:
+        return ""
+    by_reason = {}
+    for res in without_odds:
+        by_reason.setdefault(res.get("no_odds_reason") or DEFAULT_NO_ODDS_REASON,
+                             []).append(res)
+    lines = [f"⚠ {len(without_odds)}/{total} match(s) sans cote marché : modèle pur, "
+             f"garde-fou marché désactivé (poids marché 0 %)."]
+    for reason in sorted(by_reason):
+        lines.append(f"  [{reason}] {NO_ODDS_REASONS[reason]}")
+        for res in by_reason[reason]:
+            lines.append(f"    - {res['league']} {res['home']}-{res['away']} "
+                         f"({res['date']})")
+    if DEFAULT_NO_ODDS_REASON in by_reason:
+        lines.append(f"  (précise la cause avec --no-odds-reason "
+                     f"{{{','.join(DECLARABLE_NO_ODDS_REASONS)}}} pour que le journal "
+                     f"garde la trace de la vraie raison.)")
+    return "\n".join(lines)
 
 
 def run_contest_mode(grid, final, pts, bonus, home, away):
@@ -453,7 +508,8 @@ def log_prediction(path, res, no_stake=False):
                  "lambda_home": round(res["lam_h"], 3),
                  "lambda_away": round(res["lam_a"], 3),
                  "market_weight": round(res["market_weight"], 3),
-                 "odds_age_days": res["odds_age_days"]},
+                 "odds_age_days": res["odds_age_days"],
+                 "no_odds_reason": res.get("no_odds_reason")},
     }
     for i, e in enumerate(entries):
         if e["match"] == match and e["date"] == date_iso and e.get("actual_score") is None:
@@ -971,10 +1027,12 @@ def load_skill_json(source):
 def skill_json_to_fixture(doc):
     """Extrait de l'export les champs mappables sur les arguments de `match`.
 
-    Champs lus : league, home, away, match_date, odds_date, odds_1x2. Les champs
-    `ou` (le modèle de production price les scores depuis sa propre grille, il ne
-    se cale pas sur les cotes O/U) et `final_probs_1x2` (predict.py recalcule son
-    propre FINAL) sont ignorés — voir la note émise à l'appel."""
+    Champs lus : league, home, away, match_date, odds_date, odds_1x2 et
+    `no_odds_reason` (optionnel : pourquoi l'export ne porte pas de cote — c'est
+    le skill qui le sait, pas predict.py). Les champs `ou` (le modèle de
+    production price les scores depuis sa propre grille, il ne se cale pas sur
+    les cotes O/U) et `final_probs_1x2` (predict.py recalcule son propre FINAL)
+    sont ignorés — voir la note émise à l'appel."""
     league = doc.get("league")
     if league not in footballdata.LEAGUES:
         sys.exit(f"--from-skill-json : league '{league}' absente ou invalide "
@@ -989,8 +1047,13 @@ def skill_json_to_fixture(doc):
             odds_spec = f"{float(o['home'])},{float(o['draw'])},{float(o['away'])}"
         except (KeyError, TypeError, ValueError):
             sys.exit("--from-skill-json : 'odds_1x2' doit contenir home, draw, away numériques.")
+    reason = doc.get("no_odds_reason")
+    if reason is not None and reason not in DECLARABLE_NO_ODDS_REASONS:
+        sys.exit(f"--from-skill-json : 'no_odds_reason' vaut '{reason}', attendu l'une de "
+                 f"{list(DECLARABLE_NO_ODDS_REASONS)} — on ne devine pas une raison.")
     return {"league": league, "home": home, "away": away, "odds_spec": odds_spec,
-            "match_date": doc.get("match_date"), "odds_date": doc.get("odds_date")}
+            "match_date": doc.get("match_date"), "odds_date": doc.get("odds_date"),
+            "no_odds_reason": reason}
 
 
 # ---------------------------------------------------------------------------
@@ -1009,6 +1072,10 @@ def cmd_match(args, conn):
         if fx["odds_spec"]:
             args.odds = [fx["odds_spec"]]
         args.date, args.odds_date = fx["match_date"], fx["odds_date"]
+        # L'export sait pourquoi il n'a pas de cote ; le CLI reste prioritaire
+        # s'il en déclare une aussi (l'opérateur a le dernier mot).
+        if fx["no_odds_reason"] and not args.no_odds_reason:
+            args.no_odds_reason = fx["no_odds_reason"]
         if doc.get("ou") is not None:
             log.info("Export skill : champ 'ou' présent mais non consommé — le modèle de "
                      "production price les scores depuis sa propre grille entraînée, il ne se "
@@ -1044,12 +1111,17 @@ def cmd_match(args, conn):
         fixtures.append(tuple(parts))
     if not fixtures:
         sys.exit("Fournis --home/--away (avec --league) ou au moins un --fixture LIGUE,Dom,Ext.")
+    no_odds_reason = args.no_odds_reason
     if args.odds and len(fixtures) > 1:
         log.warning("--odds ne s'applique qu'à un match unique — ignoré pour un slate "
                     "(%d affiches). Passe chaque match séparément pour blender ses cotes.",
                     len(fixtures))
+        # Cette perte était jusqu'ici purement verbale : le journal n'en gardait
+        # qu'un market_weight nul. On la nomme dans chaque entrée.
+        no_odds_reason = "slate_odds_ignored"
 
     fit_cache = {}
+    without_odds = []
     for i, (league, home, away) in enumerate(fixtures):
         if league not in footballdata.LEAGUES:
             sys.exit(f"Ligue inconnue '{league}' (attendu {footballdata.LEAGUES}).")
@@ -1057,10 +1129,15 @@ def cmd_match(args, conn):
             print("\n" + "=" * 72 + "\n")
         res = predict_match(conn, cfg, league, home, away, target_date,
                             args.odds if len(fixtures) == 1 else [], odds_age,
-                            args.blend, fit_cache)
+                            args.blend, fit_cache, no_odds_reason)
         print_prediction(res, cfg, contest, args.contest_exact_bonus, args.no_stake)
+        if res["market"] is None:
+            without_odds.append(res)
         if not args.no_log:
             log_prediction(args.log, res, args.no_stake)
+    recap = no_odds_recap(without_odds, len(fixtures))
+    if recap:
+        print("\n" + recap)
     if not args.no_log:
         print(f"\n{len(fixtures)} prédiction(s) journalisée(s) dans {args.log}.")
 
@@ -1132,6 +1209,10 @@ def build_parser():
                    help="MODE CONCOURS : points si l'issue est correcte (ex: 13,50,68)")
     p.add_argument("--contest-exact-bonus", type=float, default=0.0, metavar="B",
                    help="Points bonus si le score exact est correct (défaut 0)")
+    p.add_argument("--no-odds-reason", choices=DECLARABLE_NO_ODDS_REASONS, default=None,
+                   help="Pourquoi aucune cote n'est fournie, journalisé dans "
+                        "meta.no_odds_reason. Sans ce drapeau l'entrée est marquée "
+                        f"'{DEFAULT_NO_ODDS_REASON}' — jamais une raison devinée.")
     p.add_argument("--no-stake", action="store_true", help="désactive la section mise suggérée")
     p.add_argument("--no-log", action="store_true", help="ne pas journaliser la prédiction")
     p.set_defaults(func=cmd_match)
