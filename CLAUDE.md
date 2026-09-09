@@ -72,6 +72,28 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   jamais devinée. `predict.py match` récapitule en fin de run les affiches
   parties sans cote, groupées par raison. Purement additif — n'interagit pas
   avec le CLV par pari de M5.2 (deux champs distincts, aucun recouvrement).
+- **M6 — repricing H-1 sur compositions confirmées : implémenté.** Quand une
+  composition officielle est connue (~1h avant coup d'envoi), `predict.py
+  match --lineup-adjustment FICHIER` ajuste λ_domicile/λ_extérieur du refit
+  figé plutôt que de rester sur la prédiction du lundi. Entrée manuelle (JSON,
+  fichier ou stdin) : pour chaque équipe et chaque axe (`attack`/`defense`),
+  la somme des contributions xG/90 (attaque) ou xG concédé/90 (défense) des
+  titulaires CONFIRMÉS vs une composition de RÉFÉRENCE — le ratio est
+  **dérivé** par `compute_lineup_ratio` (jamais saisi directement), clampé à
+  `LINEUP_RATIO_BOUNDS` (0,5–1,75) contre une saisie fautive. Le ratio
+  d'attaque d'une équipe multiplie SON PROPRE λ ; son ratio de défense
+  multiplie le λ ADVERSE. Vit entièrement dans `predict.py`
+  (`apply_lineup_adjustment`, `grid_and_probs_from_lambdas`) — `model.py`
+  n'est jamais touché, `grid_and_probs_from_lambdas` réutilise
+  `model.DixonColes` via une instance à deux équipes fictives dont les
+  log-forces d'attaque encodent directement les λ ajustés, pour ne pas
+  dupliquer la correction tau/rho. Optionnel (comportement inchangé si le
+  flag est omis), ignoré pour un slate (`--fixture` répété, un seul match à
+  la fois), et journalisé dans `meta.lineup_adjustment` (`applied`, ratios,
+  λ avant/après) que l'ajustement soit appliqué ou non. Pas de scraping —
+  la composition est fournie à la main (recherche web via le skill) ; c'est
+  un ajustement en aval du modèle M3.5 figé, pas un re-tuning de ses
+  hyperparamètres — `data/m35_frozen.json` n'est jamais régénéré pour ça.
 
 ## Commandes
 
@@ -130,7 +152,9 @@ python -m unittest discover -s tests # tests unitaires
   `lookup_failed` / `margin_rejected`) journalisé dans `meta.no_odds_reason`
   quand aucune cote n'est fournie ; déduit à `slate_odds_ignored` si `--odds`
   est ignoré sur un `--fixture` répété, sinon `not_provided` — jamais deviné.
-  Récapitulatif des matchs sans cote en fin de run `match`. Sous-commande
+  Récapitulatif des matchs sans cote en fin de run `match`. `--lineup-adjustment`
+  (voir M6 ci-dessus) ajuste λ post-fit sur composition confirmée, journalisé
+  dans `meta.lineup_adjustment`. Sous-commande
   `sync-results` : remplit `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
   après résolution d'alias, tolérance ±2 jours sur la date (report de
   calendrier) ; ce qui reste introuvable est listé « en attente de données

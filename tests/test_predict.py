@@ -10,9 +10,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import numpy as np
+
 import backtest35
 import db
 import footballdata
+import model
 import predict
 
 
@@ -698,6 +701,143 @@ class TestPredictMatchIntegration(unittest.TestCase):
         self.assertTrue(res["home_ok"])
         self.assertFalse(res["away_ok"])
         conn.close()
+
+    def test_lineup_adjustment_shifts_lambda_when_applied(self):
+        conn = self._mini_db()
+        cfg = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        without = predict.predict_match(conn, cfg, "E0", "Alpha", "Beta",
+                                        datetime.date(2026, 8, 15), [], None, 0.65, {})
+        adjustment = {"home": {"attack": {
+            "confirmed": [0.55, 0.40, 0.10, 0.05],  # buteur titulaire absent, remplaçant à 0.10
+            "reference": [0.55, 0.40, 0.50, 0.05],
+        }}}
+        with_adj = predict.predict_match(conn, cfg, "E0", "Alpha", "Beta",
+                                         datetime.date(2026, 8, 15), [], None, 0.65, {},
+                                         lineup_adjustment=adjustment)
+        self.assertTrue(with_adj["lineup_adjustment"]["applied"])
+        expected_ratio = 1.10 / 1.50
+        self.assertAlmostEqual(with_adj["lineup_adjustment"]["home"]["attack_ratio"],
+                               expected_ratio, places=4)
+        self.assertLess(with_adj["lam_h"], without["lam_h"])  # bon sens : λ domicile baisse
+        self.assertAlmostEqual(with_adj["lam_h"], without["lam_h"] * expected_ratio, places=6)
+        self.assertAlmostEqual(with_adj["lam_a"], without["lam_a"])  # away non touché
+        conn.close()
+
+    def test_no_lineup_adjustment_leaves_prediction_unchanged(self):
+        conn = self._mini_db()
+        cfg = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        res = predict.predict_match(conn, cfg, "E0", "Alpha", "Beta",
+                                    datetime.date(2026, 8, 15), [], None, 0.65, {},
+                                    lineup_adjustment=None)
+        self.assertEqual(res["lineup_adjustment"], {"applied": False})
+        conn.close()
+
+
+class TestLineupAdjustment(unittest.TestCase):
+    """Ajustement post-fit des λ sur compositions confirmées (chantier 3.1)."""
+
+    def test_ratio_is_one_when_confirmed_equals_reference(self):
+        self.assertAlmostEqual(predict.compute_lineup_ratio([0.2, 0.1], [0.2, 0.1]), 1.0)
+
+    def test_ratio_accepts_named_entries(self):
+        confirmed = [{"name": "Titulaire A", "value": 0.3}, {"name": "Remplaçant", "value": 0.1}]
+        reference = [{"name": "Titulaire A", "value": 0.3}, {"name": "Titulaire B", "value": 0.5}]
+        self.assertAlmostEqual(predict.compute_lineup_ratio(confirmed, reference), 0.4 / 0.8)
+
+    def test_ratio_defaults_to_one_without_reference(self):
+        self.assertEqual(predict.compute_lineup_ratio([0.3], []), 1.0)
+        self.assertEqual(predict.compute_lineup_ratio([], [0.0]), 1.0)
+
+    def test_ratio_clamped_to_bounds(self):
+        lo, hi = predict.LINEUP_RATIO_BOUNDS
+        self.assertEqual(predict.compute_lineup_ratio([10.0], [1.0]), hi)
+        self.assertEqual(predict.compute_lineup_ratio([0.01], [1.0]), lo)
+
+    def test_ratio_is_derived_not_taken_verbatim(self):
+        # Deux entrées différentes mais de même ratio (somme/somme) doivent produire
+        # le même multiplicateur : ce n'est pas un chiffre saisi directement.
+        self.assertAlmostEqual(predict.compute_lineup_ratio([1.0], [2.0]),
+                               predict.compute_lineup_ratio([3.0], [6.0]))
+
+    def test_no_adjustment_returns_unchanged_lambdas(self):
+        lam_h, lam_a, meta = predict.apply_lineup_adjustment(1.5, 1.1, -0.05, None)
+        self.assertEqual((lam_h, lam_a), (1.5, 1.1))
+        self.assertEqual(meta, {"applied": False})
+
+    def test_empty_dict_is_also_no_adjustment(self):
+        lam_h, lam_a, meta = predict.apply_lineup_adjustment(1.5, 1.1, -0.05, {})
+        self.assertEqual((lam_h, lam_a), (1.5, 1.1))
+        self.assertFalse(meta["applied"])
+
+    def test_key_scorer_absent_reduces_home_lambda_by_expected_magnitude(self):
+        """Cas minimal requis : un titulaire clé absent déplace λ dans le bon sens
+        et de l'ordre de grandeur attendu (pas juste "ça tourne sans erreur")."""
+        adjustment = {"home": {"attack": {
+            "confirmed": [0.55, 0.40, 0.10, 0.05],   # buteur (0.50) remplacé par (0.10)
+            "reference": [0.55, 0.40, 0.50, 0.05],
+        }}}
+        lam_h, lam_a, meta = predict.apply_lineup_adjustment(2.0, 1.0, -0.05, adjustment)
+        expected_ratio = 1.10 / 1.50  # ≈ 0.733
+        self.assertTrue(meta["applied"])
+        self.assertAlmostEqual(meta["home"]["attack_ratio"], expected_ratio, places=4)
+        self.assertAlmostEqual(meta["home"]["defense_ratio"], 1.0)
+        self.assertAlmostEqual(lam_h, 2.0 * expected_ratio, places=6)
+        self.assertLess(lam_h, 2.0)              # bon sens : l'attaque privée de son buteur baisse
+        self.assertAlmostEqual(lam_a, 1.0)       # l'équipe adverse n'est pas affectée
+        # ordre de grandeur : perte réaliste (~27 %), ni un bruit négligeable ni un effondrement
+        loss = 1.0 - expected_ratio
+        self.assertGreater(loss, 0.15)
+        self.assertLess(loss, 0.40)
+
+    def test_weak_confirmed_defense_increases_opponent_lambda(self):
+        adjustment = {"away": {"defense": {
+            "confirmed": [1.2, 0.9, 0.8],   # défenseurs remplaçants (xG concédé/90 plus haut)
+            "reference": [0.9, 0.7, 0.6],
+        }}}
+        lam_h, lam_a, meta = predict.apply_lineup_adjustment(1.3, 1.4, 0.03, adjustment)
+        self.assertGreater(lam_h, 1.3)           # défense adverse affaiblie -> plus de buts en face
+        self.assertAlmostEqual(lam_a, 1.4)       # l'attaque adverse elle-même n'est pas ajustée ici
+
+    def test_grid_and_probs_from_lambdas_matches_direct_fit(self):
+        """Le mini-modèle (predict.py) doit reproduire EXACTEMENT model.DixonColes
+        (jamais modifié) quand on lui repasse les λ tels quels — la correction
+        tau/rho n'est pas dupliquée, juste réutilisée."""
+        rows = []
+        base = datetime.date(2025, 1, 1)
+        for wk in range(15):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            rows.append({"date": day, "home": "Alpha", "away": "Beta", "fthg": 2, "ftag": 1})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            rows.append({"date": day2, "home": "Beta", "away": "Alpha", "fthg": 1, "ftag": 1})
+        fitted = model.fit(rows, xi=0.0)
+        lam_h, lam_a = fitted.lambdas("Alpha", "Beta")
+        grid_direct = fitted.score_grid("Alpha", "Beta")
+        probs_direct = fitted.probs_1x2("Alpha", "Beta")
+        grid_mini, probs_mini = predict.grid_and_probs_from_lambdas(lam_h, lam_a, fitted.rho)
+        np.testing.assert_allclose(grid_direct, grid_mini, atol=1e-9)
+        for a, b in zip(probs_direct, probs_mini):
+            self.assertAlmostEqual(a, b, places=9)
+
+    def test_load_lineup_adjustment_rejects_empty_document(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({}, f)
+            path = f.name
+        try:
+            with self.assertRaises(SystemExit):
+                predict.load_lineup_adjustment(path)
+        finally:
+            Path(path).unlink()
+
+    def test_load_lineup_adjustment_reads_file(self):
+        doc = {"home": {"attack": {"confirmed": [0.1], "reference": [0.2]}}}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(doc, f)
+            path = f.name
+        try:
+            loaded = predict.load_lineup_adjustment(path)
+            self.assertEqual(loaded, doc)
+        finally:
+            Path(path).unlink()
 
 
 class TestNoOddsReason(unittest.TestCase):

@@ -206,6 +206,115 @@ def market_weight(base_blend, age_days, all_margins_ok):
 
 
 # ---------------------------------------------------------------------------
+# Ajustement post-fit sur compositions confirmées (--lineup-adjustment, M6)
+#
+# Distinct du pont marché/modèle ci-dessus : celui-ci ajuste les λ AVANT le
+# blend, à partir d'une composition officielle (typiquement connue ~1h avant
+# coup d'envoi), plutôt que de rester sur le refit figé du lundi. N'existe
+# jamais dans model.py (qui reste le fit walk-forward pur) : c'est un
+# ajustement en aval du modèle M3.5 figé, pas un re-tuning de ses
+# hyperparamètres — les fichiers figés ne sont jamais touchés ici.
+#
+# Entrée manuelle (pas de scraping) : pour chaque équipe et chaque axe
+# (attack/defense), la somme des contributions xG/90 (attack) ou xG concédé/90
+# (defense) des titulaires CONFIRMÉS vs d'une composition de RÉFÉRENCE
+# (typique/attendue) — le ratio en est dérivé, jamais saisi directement, pour
+# éviter un multiplicateur choisi au pif.
+# ---------------------------------------------------------------------------
+
+LINEUP_RATIO_BOUNDS = (0.5, 1.75)  # borne un ratio aberrant (saisie fautive) ;
+                                    # une absence réaliste ne divise pas l'attaque par plus de 2
+
+
+def compute_lineup_ratio(confirmed, reference):
+    """Ratio (somme confirmed / somme reference), clampé à LINEUP_RATIO_BOUNDS.
+
+    Chaque élément de confirmed/reference est un nombre ou {"value": nombre,
+    "name": ...} (le nom n'est là que pour la lisibilité du fichier d'entrée).
+    Une référence vide ou nulle renvoie 1.0 (rien à comparer) plutôt qu'une
+    division par zéro."""
+    def total(entries):
+        return sum(e["value"] if isinstance(e, dict) else e for e in entries)
+    ref_sum = total(reference)
+    if ref_sum <= 0:
+        return 1.0
+    ratio = total(confirmed) / ref_sum
+    lo, hi = LINEUP_RATIO_BOUNDS
+    return max(lo, min(hi, ratio))
+
+
+def _side_ratios(side):
+    side = side or {}
+    def axis(name):
+        spec = side.get(name)
+        if not spec:
+            return 1.0
+        return compute_lineup_ratio(spec.get("confirmed", []), spec.get("reference", []))
+    return axis("attack"), axis("defense")
+
+
+def apply_lineup_adjustment(lam_h, lam_a, rho, adjustment):
+    """Ajuste λ_domicile/λ_extérieur post-fit selon les compositions confirmées.
+
+    adjustment : dict optionnel {"home": {...}, "away": {...}} (voir
+    load_lineup_adjustment) ou None/{} pour aucun ajustement. Le ratio
+    d'ATTAQUE d'une équipe multiplie SON PROPRE λ ; son ratio de DÉFENSE
+    multiplie le λ ADVERSE — une défense affaiblie ou renforcée change les
+    buts attendus EN FACE, pas les siens.
+
+    Renvoie (lam_h_ajusté, lam_a_ajusté, meta) ; meta contient toujours
+    "applied" (bool) pour rester traçable dans le journal même quand
+    l'ajustement n'est pas demandé."""
+    if not adjustment:
+        return lam_h, lam_a, {"applied": False}
+    atk_h, def_h = _side_ratios(adjustment.get("home"))
+    atk_a, def_a = _side_ratios(adjustment.get("away"))
+    new_lam_h = lam_h * atk_h * def_a
+    new_lam_a = lam_a * atk_a * def_h
+    meta = {
+        "applied": True,
+        "home": {"attack_ratio": round(atk_h, 4), "defense_ratio": round(def_h, 4)},
+        "away": {"attack_ratio": round(atk_a, 4), "defense_ratio": round(def_a, 4)},
+        "lam_h_before": round(lam_h, 4), "lam_h_after": round(new_lam_h, 4),
+        "lam_a_before": round(lam_a, 4), "lam_a_after": round(new_lam_a, 4),
+    }
+    return new_lam_h, new_lam_a, meta
+
+
+def grid_and_probs_from_lambdas(lam_h, lam_a, rho):
+    """Grille de scores + probas 1N2 pour des λ arbitraires (post-ajustement).
+
+    Réutilise model.DixonColes tel quel (jamais modifié) via une instance à
+    deux équipes fictives dont les log-forces d'attaque encodent directement
+    log(λ_h)/log(λ_a) (défenses et gamma neutres, log=0) : même calcul de la
+    correction tau/rho que le fit normal, sans dupliquer la logique de
+    model.py dans predict.py."""
+    mini = model.DixonColes(["_h", "_a"], np.log([lam_h, lam_a]), np.log([1.0, 1.0]), 0.0, rho)
+    grid = mini.score_grid("_h", "_a")
+    return grid, mini.probs_1x2("_h", "_a")
+
+
+def load_lineup_adjustment(source):
+    """Charge un ajustement de composition (JSON, fichier ou '-' pour stdin).
+
+    Schéma : {"home": {"attack": {"confirmed": [...], "reference": [...]},
+                        "defense": {"confirmed": [...], "reference": [...]}},
+              "away": {...}} — "home"/"away" et "attack"/"defense" sont tous
+    optionnels ; un axe absent = pas d'ajustement sur cet axe (ratio 1.0)."""
+    try:
+        raw = sys.stdin.read() if source == "-" else Path(source).read_text()
+    except OSError as e:
+        sys.exit(f"--lineup-adjustment : lecture impossible ({e}).")
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as e:
+        sys.exit(f"--lineup-adjustment : JSON malformé ({e}).")
+    if not isinstance(doc, dict) or not (doc.get("home") or doc.get("away")):
+        sys.exit("--lineup-adjustment : objet JSON avec au moins 'home' ou 'away'.")
+    return doc
+
+
+# ---------------------------------------------------------------------------
 # Mise (Kelly fractionné plafonné) — repris de match_model pour la section 💰
 # ---------------------------------------------------------------------------
 
@@ -250,7 +359,7 @@ def btts_prob(grid):
 
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
                   odds_specs, odds_age_days, blend, fit_cache,
-                  no_odds_reason=None):
+                  no_odds_reason=None, lineup_adjustment=None):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -269,8 +378,13 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
     away, away_ok = resolve_team(away_in, fitted.teams, alias_map)
 
     lam_h, lam_a = fitted.lambdas(home, away)
-    grid = grid_to_dict(fitted.score_grid(home, away))
-    raw = fitted.probs_1x2(home, away)
+    lam_h, lam_a, lineup_meta = apply_lineup_adjustment(lam_h, lam_a, fitted.rho, lineup_adjustment)
+    if lineup_meta["applied"]:
+        grid_arr, raw = grid_and_probs_from_lambdas(lam_h, lam_a, fitted.rho)
+        grid = grid_to_dict(grid_arr)
+    else:
+        grid = grid_to_dict(fitted.score_grid(home, away))
+        raw = fitted.probs_1x2(home, away)
     model_probs = dict(zip(ISSUES, backtest35.apply_temperature(raw, cfg["temperature"])))
 
     market = best_odds = None
@@ -305,6 +419,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "model": model_probs, "market": market, "best_odds": best_odds,
         "final": final, "market_weight": m_weight, "fresh_note": fresh_note,
         "odds_age_days": odds_age_days, "no_odds_reason": reason,
+        "lineup_adjustment": lineup_meta,
     }
 
 
@@ -325,6 +440,12 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
     print(f"Refit sur {res['n_train']} matchs joués {res['league']} jusqu'au "
           f"{res['last_train_date']} (réf. {res['ref_monday']}, match prévu {res['date']}).")
     print(f"Lambdas : {home} λ={res['lam_h']:.2f} | {away} λ={res['lam_a']:.2f}")
+    la = res.get("lineup_adjustment")
+    if la and la["applied"]:
+        print(f"Ajustement composition (H-1) : {home} attaque×{la['home']['attack_ratio']:.2f} "
+              f"déf×{la['home']['defense_ratio']:.2f} | {away} attaque×{la['away']['attack_ratio']:.2f} "
+              f"déf×{la['away']['defense_ratio']:.2f} → λ {la['lam_h_before']:.2f}→{la['lam_h_after']:.2f} / "
+              f"{la['lam_a_before']:.2f}→{la['lam_a_after']:.2f}")
     print(f"Pont marché/modèle : {res['fresh_note']}" +
           (f" → poids marché {res['market_weight']:.0%}." if res["market"]
            else f" [{res.get('no_odds_reason') or DEFAULT_NO_ODDS_REASON}]."))
@@ -509,7 +630,8 @@ def log_prediction(path, res, no_stake=False):
                  "lambda_away": round(res["lam_a"], 3),
                  "market_weight": round(res["market_weight"], 3),
                  "odds_age_days": res["odds_age_days"],
-                 "no_odds_reason": res.get("no_odds_reason")},
+                 "no_odds_reason": res.get("no_odds_reason"),
+                 "lineup_adjustment": res.get("lineup_adjustment") or {"applied": False}},
     }
     for i, e in enumerate(entries):
         if e["match"] == match and e["date"] == date_iso and e.get("actual_score") is None:
@@ -1120,6 +1242,15 @@ def cmd_match(args, conn):
         # qu'un market_weight nul. On la nomme dans chaque entrée.
         no_odds_reason = "slate_odds_ignored"
 
+    lineup_adjustment = None
+    if args.lineup_adjustment:
+        if len(fixtures) > 1:
+            log.warning("--lineup-adjustment ne s'applique qu'à un match unique — ignoré "
+                        "pour un slate (%d affiches). Passe chaque match séparément.",
+                        len(fixtures))
+        else:
+            lineup_adjustment = load_lineup_adjustment(args.lineup_adjustment)
+
     fit_cache = {}
     without_odds = []
     for i, (league, home, away) in enumerate(fixtures):
@@ -1129,7 +1260,7 @@ def cmd_match(args, conn):
             print("\n" + "=" * 72 + "\n")
         res = predict_match(conn, cfg, league, home, away, target_date,
                             args.odds if len(fixtures) == 1 else [], odds_age,
-                            args.blend, fit_cache, no_odds_reason)
+                            args.blend, fit_cache, no_odds_reason, lineup_adjustment)
         print_prediction(res, cfg, contest, args.contest_exact_bonus, args.no_stake)
         if res["market"] is None:
             without_odds.append(res)
@@ -1213,6 +1344,12 @@ def build_parser():
                    help="Pourquoi aucune cote n'est fournie, journalisé dans "
                         "meta.no_odds_reason. Sans ce drapeau l'entrée est marquée "
                         f"'{DEFAULT_NO_ODDS_REASON}' — jamais une raison devinée.")
+    p.add_argument("--lineup-adjustment", default=None, metavar="FICHIER",
+                   help="Ajustement post-fit des λ selon les compositions officielles "
+                        "confirmées (JSON, fichier ou '-' pour stdin ; ratios attaque/défense "
+                        "dérivés de xG par titulaire confirmé vs référence — voir "
+                        "load_lineup_adjustment). Journalisé dans meta.lineup_adjustment. "
+                        "Ignoré pour un slate (--fixture répété) — un seul match à la fois.")
     p.add_argument("--no-stake", action="store_true", help="désactive la section mise suggérée")
     p.add_argument("--no-log", action="store_true", help="ne pas journaliser la prédiction")
     p.set_defaults(func=cmd_match)

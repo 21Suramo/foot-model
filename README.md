@@ -272,6 +272,14 @@ python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
 python predict.py match --league SP1 --home "Betis" --away "Real Madrid" \
     --no-odds-reason not_yet_published
 
+# Repricing H-1 : composition officielle confirmée (buteur titulaire absent)
+cat > lineup.json <<'EOF'
+{"home": {"attack": {"confirmed": [0.55, 0.40, 0.10, 0.05],
+                      "reference": [0.55, 0.40, 0.50, 0.05]}}}
+EOF
+python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+    --lineup-adjustment lineup.json
+
 # Enregistrer un résultat, puis produire le rapport de calibration mensuel
 python predict.py result --match "Arsenal-Chelsea" --actual 2-1
 python predict.py report            # -> reports/production_calibration.md
@@ -295,6 +303,15 @@ python predict.py report            # -> reports/production_calibration.md
   qu'à un match unique, il est ignoré sur un slate) ou `not_provided` quand rien
   n'est déclaré. Cette dernière valeur veut dire « raison non précisée » : elle
   n'est jamais remplacée par une cause plausible devinée après coup.
+- **Repricing H-1 sur composition confirmée** : `--lineup-adjustment FICHIER`
+  (JSON, fichier ou `-` pour stdin) ajuste λ_domicile/λ_extérieur du refit
+  figé à partir de la composition officielle, plutôt que de rester sur la
+  prédiction du lundi. Pour chaque équipe et chaque axe (`attack`/`defense`),
+  fournir la somme des contributions xG/90 (attaque) ou xG concédé/90
+  (défense) des titulaires **confirmés** vs une composition de **référence**
+  (typique) — le ratio est calculé par le code, jamais saisi directement.
+  Optionnel (comportement inchangé sans le flag), ignoré sur un slate
+  (`--fixture` répété), et toujours journalisé dans `meta.lineup_adjustment`.
 
 ### Backtest du blend marché/modèle
 
