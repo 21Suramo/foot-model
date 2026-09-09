@@ -208,7 +208,7 @@ Périmètre : **E0** (Premier League), **SP1** (Liga), **F1** (Ligue 1), saisons
 ## Installation
 
 ```bash
-pip install pandas requests numpy scipy
+pip install -r requirements.txt
 ```
 
 ## Usage

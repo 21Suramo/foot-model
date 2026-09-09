@@ -76,7 +76,7 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
 ## Commandes
 
 ```bash
-pip install pandas requests numpy scipy   # dépendances (scipy requis par model.py)
+pip install -r requirements.txt      # dépendances (scipy requis par model.py)
 python pipeline.py --update          # tout mettre à jour (3 ligues x 9 saisons)
 python pipeline.py --update --league E0 --season 2324   # une ligue/saison
 python check.py                      # validation (code retour 0 si tout passe)
