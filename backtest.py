@@ -52,6 +52,19 @@ def logloss(probs, outcome):
     return -np.log(max(probs[outcome], 1e-12))
 
 
+def demargin_proportional(odds_h, odds_d, odds_a):
+    """Démargeage naïf : p_i = (1/o_i) / Σ(1/o_j).
+
+    Retire la marge en la répartissant PROPORTIONNELLEMENT à la cote implicite,
+    donc sans corriger le biais favori-longshot (le book charge plus de marge
+    sur les grosses cotes). Sert de référence basse dans devig_check.py ; le
+    code de production ne l'utilise pas.
+    """
+    inv = np.array([1.0 / odds_h, 1.0 / odds_d, 1.0 / odds_a])
+    p = inv / inv.sum()
+    return float(p[0]), float(p[1]), float(p[2])
+
+
 def demargin_power(odds_h, odds_d, odds_a):
     """Probas implicites démargées par la méthode power : p_i = (1/o_i)^k, Σp = 1."""
     inv = np.array([1.0 / odds_h, 1.0 / odds_d, 1.0 / odds_a])
@@ -62,6 +75,55 @@ def demargin_power(odds_h, odds_d, odds_a):
         k = brentq(f, 1e-3, 20.0)
     p = inv ** k
     return float(p[0]), float(p[1]), float(p[2])
+
+
+def demargin_shin(odds_h, odds_d, odds_a):
+    """Probas implicites démargées par le modèle de Shin (1993).
+
+    Contrairement au démargeage proportionnel (marge répartie au prorata) et,
+    dans une moindre mesure, à la méthode power (exposant unique), Shin part
+    d'un MODÈLE de la marge : le bookmaker se protège d'une proportion z de
+    parieurs informés, ce qui le pousse à charger davantage les issues à faible
+    probabilité — exactement le biais favori-longshot que le démargeage
+    proportionnel ignore.
+
+    Avec π_i = 1/o_i et Π = Σ π_j (le « booksum », > 1 quand il y a marge) :
+
+        p_i(z) = [ sqrt(z² + 4(1 − z) π_i² / Π) − z ] / (2 (1 − z))
+
+    z est l'unique racine de Σ p_i(z) = 1 sur [0, 1) : en z = 0 la somme vaut
+    √Π > 1, elle décroît ensuite sous 1. z = 0 redonne exactement le démargeage
+    proportionnel — Shin est donc une généralisation, pas une méthode
+    concurrente sans lien.
+
+    Cas dégénéré : un livre dont Π ≤ 1 (arbitrable, donc cotes suspectes ou
+    incohérentes — margin_ok() les rejette côté production) n'a pas de racine ;
+    on retombe alors sur le démargeage proportionnel plutôt que d'échouer.
+    """
+    inv = np.array([1.0 / odds_h, 1.0 / odds_d, 1.0 / odds_a])
+    booksum = float(inv.sum())
+    if booksum <= 1.0 + 1e-12:
+        return demargin_proportional(odds_h, odds_d, odds_a)
+
+    def probs(z):
+        return (np.sqrt(z ** 2 + 4.0 * (1.0 - z) * inv ** 2 / booksum) - z) / (2.0 * (1.0 - z))
+
+    f = lambda z: probs(z).sum() - 1.0
+    hi = 1.0 - 1e-9
+    if f(hi) > 0:            # marge si extrême que z sature : garde-fou numérique
+        return demargin_power(odds_h, odds_d, odds_a)
+    z = brentq(f, 0.0, hi, xtol=1e-12)
+    p = probs(z)
+    p = p / p.sum()          # normalisation de sûreté (résidu numérique)
+    return float(p[0]), float(p[1]), float(p[2])
+
+
+# Méthodes de démargeage adressables par nom (devig_check.py, predict.py --devig).
+DEMARGIN_METHODS = {
+    "proportional": demargin_proportional,
+    "power": demargin_power,
+    "shin": demargin_shin,
+}
 
 
 def load_league(conn, league):

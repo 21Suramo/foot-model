@@ -20,8 +20,9 @@ dans le fit, contrôle par permutation des scores).
 | --- | --- | --- |
 | M2 — pipeline de données | ✅ terminé (tag `m2-pipeline`) | football-data.co.uk + xG Understat, SQLite, `check.py` vert |
 | M3 — backtest Dixon-Coles (buts) | ✅ implémenté et exécuté | 3 critères sur 4 validés — Brier à +2,47 % du marché (critère < 2 % non atteint) |
-| M3.5 — pseudo-buts xG + recalibration | ✅ validé | **4 critères sur 4** — Brier à **+1,78 %** du marché, réglages figés dans `data/m35_frozen.json` |
+| M3.5 — pseudo-buts xG + recalibration | ✅ validé | **4 critères sur 4** — Brier à **+1,78 %** du marché (IC 95 % [+1,24 ; +2,34 %]), réglages figés dans `data/m35_frozen.json` |
 | M5 — mise en production | ✅ implémenté | `predict.py` prédit les matchs à venir, blend marché/modèle, journal + calibration mensuelle |
+| M7 — mesurer l'edge avant de l'améliorer | ✅ implémenté | CLV réservé à une clôture sharp, IC bootstrap sur tous les Brier publiés, de-vigging Shin, plafond d'exposition simultanée |
 
 Le protocole interdit tout re-réglage des hyperparamètres après lecture du
 jeu de test — voir [Anti-fuite et protocole](#anti-fuite-et-protocole).
@@ -143,6 +144,31 @@ matchs à venir :
   `market_weight: 0.0` muet, et la fin d'un slate récapitule les affiches
   parties en modèle pur.
 
+### 5. Mesurer l'edge avant de l'améliorer (M7)
+
+Quatre chantiers qui ne touchent pas au modèle mais rendent lisible s'il a un
+edge réel — la question à laquelle le projet ne savait pas répondre.
+
+- **Le CLV n'est calculé que contre une clôture sharp.** Auparavant il était
+  posé contre n'importe quel `matches.odds_source`. Contre une moyenne de books
+  (`avg_close`) ou une ouverture (`*_open`), ce n'est plus un CLV mais une autre
+  grandeur publiée sous le même nom : battre une moyenne tirée par des books
+  soft n'est pas battre le marché, et comparer à une ouverture inverse souvent
+  le signe. Seul `pinnacle_close` est accepté ; les paris écartés sont comptés
+  par raison dans le rapport, plutôt que dilués dans la moyenne.
+- **Tout Brier publié porte son intervalle de confiance** (`bootstrap.py`,
+  rééchantillonnage apparié, graine figée). Le chiffre de référence du projet
+  devient `+1,78 % [+1,24 ; +2,34 %]` — dont la borne haute dépasse le critère
+  de +2 %. Le rapport de production publie un IC par mois et par bucket de
+  fraîcheur, et son alerte « cotes périmées » exige désormais que l'écart
+  dépasse le seuil **et** que son intervalle exclue 0 : sur une quinzaine de
+  matchs, 3 points d'écart sortent du bruit une fois sur deux.
+- **De-vigging Shin** en production, avec le contrôle honnête qui va avec
+  (`devig_check.py` : aucun écart mesurable entre les trois méthodes).
+- **Plafond d'exposition simultanée** de 15 % de bankroll sur une semaine de
+  matchs, parce que le plafond Kelly individuel de 5 % ne dit rien du cumul de
+  dix affiches jouées le même après-midi.
+
 ## Architecture
 
 ```
@@ -179,8 +205,10 @@ pipeline.py ──> footballdata.py ─┐
 | `report.py` | Métriques (Brier/log-loss) vs marché démargé et baselines, calibration → `reports/m3_backtest.md`. |
 | `backtest35.py` | Idem M3 avec pseudo-buts xG, grid 2D (w, ξ), κ, température → `predictions_m35`, `data/m35_frozen.json`. |
 | `report35.py` | Rapport M3.5 → `reports/m35_backtest.md`. |
-| `predict.py` | Production M5 : sous-commandes `match`, `result`, `report`. Refit à jour, blend marché/modèle, journalisation, `--from-skill-json`. |
+| `predict.py` | Production M5 : sous-commandes `match`, `result`, `sync-results`, `report`. Refit à jour, blend marché/modèle, journalisation, `--from-skill-json`, de-vigging `--devig`, plafond d'exposition `--exposure-cap`. |
 | `backtest_blend.py` | Backtest walk-forward du pont marché/modèle (decay réel, cotes vieillies par interpolation clôture↔ouverture) → `reports/m5_blend_backtest.md`. |
+| `bootstrap.py` | IC par bootstrap percentile, **apparié** (on rééchantillonne des matchs, pas deux séries indépendantes) et à **graine figée** (rapports committés reproductibles). |
+| `devig_check.py` | Compare proportionnel / power / Shin sur les saisons hors test → `reports/devig_check.md`. |
 
 Périmètre : **E0** (Premier League), **SP1** (Liga), **F1** (Ligue 1), saisons
 2018-19 à 2025-26.
@@ -280,10 +308,35 @@ EOF
 python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
     --lineup-adjustment lineup.json
 
+# Démargeage des cotes : Shin par défaut, power ou proportionnel au besoin
+python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+    --odds 1.85,3.6,4.4 --devig power
+
+# Plafond d'exposition simultanée de la semaine (défaut 15 % de bankroll)
+python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+    --odds 1.85,3.6,4.4 --exposure-cap 0.10
+
 # Enregistrer un résultat, puis produire le rapport de calibration mensuel
 python predict.py result --match "Arsenal-Chelsea" --actual 2-1
 python predict.py report            # -> reports/production_calibration.md
 ```
+
+- **Plafond d'exposition simultanée** : `kelly_stake` plafonne chaque pari à
+  5 % de bankroll, ce qui suppose des paris séquentiels avec re-mesure de la
+  bankroll entre deux. Un week-end de 10 affiches viole cette hypothèse : les
+  matchs se jouent en même temps et l'exposition s'additionne. `predict.py`
+  additionne donc les mises **non réglées de la même semaine de matchs** (même
+  lundi de référence que le walk-forward) lues dans le journal — c'est là que
+  le cumul se forme, puisque `--odds` ne s'applique qu'à un match unique et
+  qu'un slate se génère match par match. Au-delà de 15 %, toutes les mises sont
+  réduites du même facteur : les tronquer reviendrait à parier sur l'ordre des
+  fixtures. Les mises brutes restent au journal (`stake_pct_uncapped`).
+- **Démargeage** : `--devig` choisit comment retirer la marge du book avant le
+  blend. Le défaut est **Shin** (marge dérivée d'un modèle explicite de
+  parieurs informés) plutôt que `power` (exposant d'ajustement). Attention à la
+  lecture : `devig_check.py` ne trouve **aucun écart de Brier distinguable du
+  bruit** entre les trois méthodes sur 4 459 matchs hors test — c'est un choix
+  de rigueur, pas un gain mesuré.
 
 - **Pont d'entrée depuis le skill** : `--from-skill-json` lit l'export
   `football-match-predictor.skill-export/v1` (fichier ou `-` pour stdin) et
@@ -354,6 +407,25 @@ extérieur.
 [reports/fatigue_signal_check.md](reports/fatigue_signal_check.md)) — la
 calibration fatigue n'a donc pas été construite, elle figerait du bruit.
 
+### Démargeage des cotes : proportionnel vs power vs Shin
+
+```bash
+python devig_check.py            # -> reports/devig_check.md
+```
+
+Le démargeage n'est pas de la plomberie : sur cotes fraîches ses sorties pèsent
+92 % du FINAL. Trois méthodes comparées sur les saisons **hors test**
+(burn-in + validation — choisir un démargeage est un réglage, il ne se fait pas
+sur le jeu de test) : Brier, log-loss, biais favori-longshot et calibration par
+tranche, chacun avec son IC bootstrap apparié.
+
+**Résultat : aucun écart de Brier distinguable du bruit** sur 4 459 matchs
+(IC à ±0,02 %). Shin est retenu en production comme choix de rigueur, pas pour
+un gain mesuré. Le contrôle révèle en passant que sur ces cotes (clôture
+Pinnacle, marge basse) le biais favori-longshot résiduel est **négatif** :
+power et Shin sur-corrigent légèrement les outsiders au lieu de leur laisser de
+la marge — donc ils manqueraient plutôt de la value qu'ils n'en fabriqueraient.
+
 ## Résultats
 
 4338 matchs de test (saisons 2022-23 à 2025-26, 3 ligues), refit hebdomadaire.
@@ -368,10 +440,17 @@ Réglages M3.5 figés sur validation 2020-21 + 2021-22 : `w = 0.6`, `ξ = 0.003`
 | Fréquences historiques (baseline) | 0.64535 | 1.06749 | 44.9 % |
 | Uniforme (baseline) | 0.66667 | 1.09861 | 44.9 % |
 
-- ✅ Brier modèle à **+1,78 %** du marché (critère < +2 %)
+- ✅ Brier modèle à **+1,78 %** du marché, IC 95 % **[+1,24 ; +2,34 %]** (critère < +2 %)
 - ✅ Bat les baselines : +9,5 % vs fréquences, +12,4 % vs uniforme (critère ≥ 3 % chacune)
 - ✅ Calibration : pire tranche (n ≥ 300) à 3,1 pts d'écart (tolérance 5 pts)
 - ✅ Anti-fuite : Brier dégradé sur les 3 ligues avec labels permutés (`--shuffle-test`)
+
+⚠️ **Le premier critère tient sur l'estimation ponctuelle, pas sur
+l'intervalle.** L'IC bootstrap apparié (10 000 rééchantillonnages des 4 338
+matchs de test) va jusqu'à +2,34 %, au-delà du seuil de +2 % : sur ces données,
+un écart réel supérieur au critère n'est pas exclu. Le +1,78 % ne doit jamais
+être cité sans son intervalle. Cet IC est une **lecture** du test — le
+protocole interdit toujours d'y re-régler quoi que ce soit.
 
 Détail par ligue/saison et courbe de calibration complète dans
 [reports/m35_backtest.md](reports/m35_backtest.md) ; comparatif M3 dans

@@ -45,6 +45,7 @@ import numpy as np
 
 import backtest
 import backtest35
+import bootstrap
 import db
 import footballdata
 import model
@@ -86,6 +87,22 @@ MARGIN_MIN = 1.0        # marge implicite < 100 % = arbitrable donc suspecte/pé
 MARGIN_MAX = 1.12       # marge > 112 % = ligne de mauvaise qualité
 
 ISSUES = ("home", "draw", "away")
+
+# Démargeage des cotes : comment on passe des cotes brutes du book à des
+# probabilités « fair ». Ce n'est pas un détail de plomberie — sur cotes
+# fraîches ces probas pèsent 92 % du FINAL, donc la méthode se propage à toutes
+# les prédictions. Shin (backtest.demargin_shin) modélise explicitement la marge
+# — le book se couvre contre une proportion z de parieurs informés, ce qui le
+# pousse à charger les issues improbables — au lieu de la retirer au prorata
+# (proportionnel) ou via un exposant libre (power).
+#
+# ⚠ Honnêteté sur ce choix : devig_check.py mesure les trois méthodes sur les
+# saisons hors test et NE TROUVE AUCUN écart de Brier distinguable du bruit
+# (IC 95 % à ±0,02 % sur 4 459 matchs de clôture Pinnacle). Shin est donc un
+# choix de RIGUEUR (marge dérivée d'un modèle, pas d'un exposant d'ajustement),
+# pas un gain mesuré. Ne pas écrire ailleurs que « Shin améliore les probas ».
+DEVIG_METHODS = tuple(backtest.DEMARGIN_METHODS)
+DEVIG_METHOD = "shin"
 
 # Raisons documentées d'une prédiction sans cote marché (`market_probs` null).
 #
@@ -168,9 +185,17 @@ def parse_odds_triples(specs):
     return out
 
 
-def market_consensus(triples):
-    """Consensus démargé (méthode power) + meilleure cote brute par issue."""
-    fairs = [backtest.demargin_power(*t) for t in triples]
+def market_consensus(triples, method=DEVIG_METHOD):
+    """Consensus démargé + meilleure cote brute par issue.
+
+    `method` ∈ DEVIG_METHODS ; chaque book est démargé SÉPARÉMENT avant la
+    moyenne (démarger la moyenne des cotes mélangerait des marges hétérogènes).
+    """
+    if method not in backtest.DEMARGIN_METHODS:
+        sys.exit(f"Méthode de démargeage inconnue '{method}' "
+                 f"(attendu l'une de {list(DEVIG_METHODS)}).")
+    demargin = backtest.DEMARGIN_METHODS[method]
+    fairs = [demargin(*t) for t in triples]
     market = {k: float(np.mean([f[i] for f in fairs])) for i, k in enumerate(ISSUES)}
     best_odds = {k: max(t[i] for t in triples) for i, k in enumerate(ISSUES)}
     return market, best_odds
@@ -339,6 +364,164 @@ def risk_label(stake_pct):
 
 
 # ---------------------------------------------------------------------------
+# Plafond d'exposition sur un slate (mises SIMULTANÉES)
+#
+# `kelly_stake` plafonne chaque pari à 5 % de bankroll. Ce plafond est
+# individuel, et c'est son angle mort : un slate de week-end sort 10 à 30
+# affiches dont les matchs se jouent dans la même après-midi. Dix paris à 3 %
+# ne sont pas « dix fois un risque de 3 % » étalés dans le temps comme le
+# suppose Kelly — ce sont 30 % de bankroll exposés EN MÊME TEMPS, sur des
+# résultats qu'aucun réglage ne rend indépendants (même journée, même météo de
+# marché, mêmes erreurs de modèle corrélées entre ligues). Kelly fractionné
+# suppose des paris séquentiels et une re-mesure de la bankroll entre deux ;
+# un slate viole les deux hypothèses.
+#
+# D'où un second plafond, sur la SOMME des mises exposées en même temps :
+# au-delà, toutes les mises sont réduites par un facteur commun (jamais par
+# troncature des dernières affiches, ce qui reviendrait à parier sur l'ordre des
+# fixtures). Réduire proportionnellement préserve les rapports de mise entre
+# paris, donc la hiérarchie de value du modèle.
+#
+# ⚠ Le périmètre du plafond n'est PAS le run courant. En pratique un slate se
+# génère un match à la fois (`--odds` ne s'applique qu'à un match unique, donc
+# un run `--fixture` répété ne produit aucune mise) : plafonner le run seul
+# n'aurait jamais rien plafonné. Le cumul se lit donc dans le JOURNAL, sur
+# toutes les mises non encore réglées de la même semaine de matchs — le lundi
+# de référence déjà utilisé partout ailleurs (backtest.monday_of). C'est bien
+# la définition du risque : des paris posés avant qu'aucun ne soit résolu.
+#
+# Valeur : 15 % de bankroll. C'est exactement 3 × le plafond individuel de 5 %,
+# donc un match seul (3 issues au maximum) n'est JAMAIS réduit — le plafond ne
+# mord que sur ce pour quoi il est fait, le cumul multi-matchs. Sur une
+# bankroll de 100 dhs cela borne la perte d'une mauvaise semaine à 15 dhs.
+# Verrouillé par tests/test_predict.py::TestRiskParameters.
+SLATE_EXPOSURE_CAP = 0.15
+
+
+def match_stakes(res, no_stake=False):
+    """Mises Kelly BRUTES d'un match (avant plafond de slate), par issue."""
+    if no_stake or not res.get("best_odds"):
+        return {}
+    out = {}
+    for issue in ISSUES:
+        stake = kelly_stake(res["final"][issue], float(res["best_odds"][issue]))
+        if stake > 0:
+            out[issue] = stake
+    return out
+
+
+def pending_exposure(path, target_date, exclude_matches=()):
+    """Mises DÉJÀ engagées et non réglées sur la même semaine de matchs.
+
+    « Même semaine » = même lundi de référence (backtest.monday_of), la maille
+    déjà utilisée par le walk-forward et le refit : c'est le week-end de matchs,
+    donc l'ensemble des paris posés avant qu'aucun ne soit résolu.
+
+    `exclude_matches` contient les clés (match, date) que le run courant va
+    RÉÉCRIRE dans le journal — sans quoi un simple ré-run du même match
+    compterait sa propre mise deux fois et se plafonnerait tout seul.
+
+    Renvoie (mise_cumulée, nombre_de_paris)."""
+    week = backtest.monday_of(target_date.isoformat())
+    total, count = 0.0, 0
+    for e in load_journal(path):
+        if e.get("actual_score") is not None:
+            continue
+        if (e.get("match"), e.get("date")) in set(exclude_matches):
+            continue
+        try:
+            if backtest.monday_of(e["date"]) != week:
+                continue
+        except (KeyError, ValueError):
+            continue
+        for b in e.get("bets") or []:
+            total += float(b.get("stake_pct") or 0.0)
+            count += 1
+    return total, count
+
+
+def apply_exposure_cap(results, cap=SLATE_EXPOSURE_CAP, no_stake=False,
+                       prior=0.0, prior_bets=0):
+    """Pose `stakes` (brutes) et `exposure_factor` sur chaque résultat du run.
+
+    Doit être appelée sur TOUS les matchs du run avant d'imprimer ou de
+    journaliser : le facteur dépend du cumul, il ne peut pas se décider match
+    par match. `prior` est l'exposition déjà engagée sur la même semaine
+    (pending_exposure) — c'est elle qui rend le plafond opérant dans le vrai
+    flux, où les matchs sont générés un par un.
+
+    Renvoie le récapitulatif du run."""
+    stakes = [match_stakes(r, no_stake) for r in results]
+    gross = sum(sum(s.values()) for s in stakes)
+    budget = max(0.0, cap - prior)
+    # Tolérance : 3 × 0,05 vaut 0,15000000000000002 en binaire. Sans elle, un
+    # match seul dont les trois issues touchent le plafond individuel serait
+    # réduit d'un cheveu, ce qui contredirait l'invariant documenté.
+    factor = 1.0 if gross <= budget * (1.0 + 1e-9) else (budget / gross if gross else 1.0)
+    for r, s in zip(results, stakes):
+        r["stakes"] = s
+        r["exposure_factor"] = factor
+        r["exposure_cap"] = cap
+    return {"gross": gross, "cap": cap, "factor": factor, "net": gross * factor,
+            "prior": prior, "prior_bets": prior_bets, "budget": budget,
+            "total": prior + gross * factor,
+            "n_bets": sum(len(s) for s in stakes), "n_matches": len(results)}
+
+
+def final_stakes(res, no_stake=False):
+    """Mises effectives d'un match : brutes × facteur d'exposition.
+
+    Une mise réduite à zéro (plafond déjà saturé) disparaît : journaliser un
+    pari à 0 % de bankroll n'aurait aucun sens dans le ROI ni dans le CLV.
+
+    Retombe sur les mises brutes si `apply_exposure_cap` n'a pas été appelée
+    (appel unitaire depuis un test ou un autre script)."""
+    stakes = res.get("stakes")
+    if stakes is None:
+        stakes = match_stakes(res, no_stake)
+    factor = res.get("exposure_factor", 1.0)
+    out = {issue: stake * factor for issue, stake in stakes.items()}
+    return {k: v for k, v in out.items() if round(v, 6) > 0}
+
+
+def exposure_recap(summary):
+    """Récapitulatif d'exposition affiché en fin de run (chaîne vide si sans objet)."""
+    if not summary or not (summary["n_bets"] or summary["prior_bets"]):
+        return ""
+    cap, total = summary["cap"], summary["total"]
+    saturated = total > cap * (1.0 + 1e-9)
+    prior_txt = ""
+    if summary["prior_bets"]:
+        prior_txt = (f"\n  Déjà engagé cette semaine (journal, paris non réglés) : "
+                     f"{summary['prior']:.1%} sur {summary['prior_bets']} pari(s) — "
+                     f"budget restant {summary['budget']:.1%}.")
+    head = (f"Exposition simultanée : {summary['n_bets']} pari(s) ajouté(s) sur "
+            f"{summary['n_matches']} affiche(s), {summary['gross']:.1%} de bankroll "
+            f"en mises brutes")
+    if summary["factor"] <= 0.0 and summary["n_bets"]:
+        return (f"⚠ {head}. Plafond d'exposition de {cap:.0%} DÉJÀ ATTEINT par les "
+                f"paris de la semaine : aucune mise supplémentaire.{prior_txt}\n"
+                f"  (Les probabilités et la value restent affichées ; c'est la mise "
+                f"qui est bloquée, pas l'analyse.)")
+    if summary["factor"] < 1.0:
+        return (f"⚠ {head}, au-dessus du budget restant de {summary['budget']:.1%} "
+                f"(plafond {cap:.0%}).{prior_txt}\n"
+                f"  Toutes les mises sont réduites du même facteur "
+                f"×{summary['factor']:.2f} → {summary['net']:.1%} ajoutés, "
+                f"{total:.1%} exposés au total.\n"
+                f"  (Kelly plafonne chaque pari isolément ; sur un week-end les matchs "
+                f"se jouent en même temps, l'exposition s'additionne sans que la "
+                f"bankroll ait le temps d'être re-mesurée entre deux.)")
+    if saturated:
+        # Rien à réduire dans ce run (aucune value), mais la semaine dépasse déjà
+        # le plafond : le dire, plutôt qu'annoncer « sous le plafond ».
+        return (f"⚠ {head} — total semaine {total:.1%}, AU-DESSUS du plafond de "
+                f"{cap:.0%} (engagé par des runs précédents).{prior_txt}")
+    return (f"{head} — total semaine {total:.1%}, sous le plafond de {cap:.0%} : "
+            f"mises inchangées.{prior_txt}")
+
+
+# ---------------------------------------------------------------------------
 # Prédiction d'un match
 # ---------------------------------------------------------------------------
 
@@ -359,7 +542,8 @@ def btts_prob(grid):
 
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
                   odds_specs, odds_age_days, blend, fit_cache,
-                  no_odds_reason=None, lineup_adjustment=None):
+                  no_odds_reason=None, lineup_adjustment=None,
+                  devig=DEVIG_METHOD):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -393,7 +577,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
     fresh_note = "aucune cote fournie — modèle seul"
     if odds_specs:
         triples = parse_odds_triples(odds_specs)
-        market, best_odds = market_consensus(triples)
+        market, best_odds = market_consensus(triples, devig)
         all_ok = all(margin_ok(t)[0] for t in triples)
         m_weight, _, fresh_note = market_weight(blend, odds_age_days, all_ok)
     else:
@@ -419,6 +603,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "model": model_probs, "market": market, "best_odds": best_odds,
         "final": final, "market_weight": m_weight, "fresh_note": fresh_note,
         "odds_age_days": odds_age_days, "no_odds_reason": reason,
+        "devig": devig if market is not None else None,
         "lineup_adjustment": lineup_meta,
     }
 
@@ -447,7 +632,8 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
               f"déf×{la['away']['defense_ratio']:.2f} → λ {la['lam_h_before']:.2f}→{la['lam_h_after']:.2f} / "
               f"{la['lam_a_before']:.2f}→{la['lam_a_after']:.2f}")
     print(f"Pont marché/modèle : {res['fresh_note']}" +
-          (f" → poids marché {res['market_weight']:.0%}." if res["market"]
+          (f" → poids marché {res['market_weight']:.0%} "
+           f"(démargeage {res.get('devig') or DEVIG_METHOD})." if res["market"]
            else f" [{res.get('no_odds_reason') or DEFAULT_NO_ODDS_REASON}]."))
     print()
 
@@ -503,18 +689,29 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
             print("  Aucune value ≥ 4 pts sur le 1N2 — le modèle confirme le marché.")
 
         if not no_stake and res["best_odds"] is not None:
-            print("\n--- Mise suggérée (Kelly 0.25, plafond 5% de bankroll) ---")
-            any_stake = False
+            factor = res.get("exposure_factor", 1.0)
+            capped = (" — RÉDUITES par le plafond d'exposition de la semaine"
+                      if factor < 1 else "")
+            cap = res.get("exposure_cap", SLATE_EXPOSURE_CAP)
+            print(f"\n--- Mise suggérée (Kelly 0.25, plafond 5% par pari, exposition "
+                  f"simultanée de la semaine ≤ {cap:.0%}){capped} ---")
+            stakes = final_stakes(res, no_stake)
+            raw = res.get("stakes") or match_stakes(res, no_stake)
             for key, label in (("home", f"Victoire {home}"), ("draw", "Match nul"),
                                ("away", f"Victoire {away}")):
+                stake = stakes.get(key, 0.0)
+                if stake <= 0:
+                    continue
                 odds = res["best_odds"][key]
-                stake = kelly_stake(final[key], odds)
-                if stake > 0:
-                    print(f"  {label:<22}: cote {odds:.2f}  |  p={fmt(final[key])}  |  "
-                          f"mise conseillée {stake:.1%} de bankroll  ({risk_label(stake)})")
-                    any_stake = True
-            if not any_stake:
-                print("  Aucune issue ne présente de value suffisante — pas de mise.")
+                suffix = (f"  [brut {raw[key]:.1%} ×{factor:.2f}]" if factor < 1 else "")
+                print(f"  {label:<22}: cote {odds:.2f}  |  p={fmt(final[key])}  |  "
+                      f"mise conseillée {stake:.1%} de bankroll  "
+                      f"({risk_label(stake)}){suffix}")
+            if not stakes:
+                print("  Aucune mise : le plafond d'exposition de la semaine est déjà "
+                      "atteint (la value ci-dessus reste valable)."
+                      if raw else
+                      "  Aucune issue ne présente de value suffisante — pas de mise.")
             print("  (Estimation mathématique, pas un conseil financier.)")
 
     if contest is not None:
@@ -603,12 +800,23 @@ def prediction_bets(res, no_stake=False):
     ici ne décide de parier : la décision reste humaine."""
     if no_stake or not res.get("best_odds"):
         return []
+    raw = res.get("stakes")
+    if raw is None:
+        raw = match_stakes(res, no_stake)
+    factor = res.get("exposure_factor", 1.0)
+    stakes = final_stakes(res, no_stake)
     bets = []
     for issue in ISSUES:
-        odds = float(res["best_odds"][issue])
-        stake = kelly_stake(res["final"][issue], odds)
-        if stake > 0:
-            bets.append({"issue": issue, "odds": odds, "stake_pct": round(stake, 6)})
+        if issue not in stakes:
+            continue
+        bet = {"issue": issue, "odds": float(res["best_odds"][issue]),
+               "stake_pct": round(stakes[issue], 6)}
+        if factor < 1.0:
+            # On garde la mise avant plafond : sans elle, impossible de relire
+            # a posteriori si le plafond a mordu et de combien.
+            bet["stake_pct_uncapped"] = round(raw[issue], 6)
+            bet["exposure_factor"] = round(factor, 6)
+        bets.append(bet)
     return bets
 
 
@@ -630,6 +838,8 @@ def log_prediction(path, res, no_stake=False):
                  "lambda_away": round(res["lam_a"], 3),
                  "market_weight": round(res["market_weight"], 3),
                  "odds_age_days": res["odds_age_days"],
+                 "devig": res.get("devig"),
+                 "exposure_factor": round(res.get("exposure_factor", 1.0), 6),
                  "no_odds_reason": res.get("no_odds_reason"),
                  "lineup_adjustment": res.get("lineup_adjustment") or {"applied": False}},
     }
@@ -641,6 +851,43 @@ def log_prediction(path, res, no_stake=False):
         entries.append(entry)
     save_journal(path, entries)
     return entry
+
+
+# Sources de cotes acceptées pour calculer un CLV (valeurs de matches.odds_source,
+# cf. footballdata.ODDS_1X2).
+#
+# Le CLV n'a de sens que contre une VRAIE ligne de CLÔTURE d'un book SHARP. La
+# clôture Pinnacle est l'étalon du pari sportif : c'est la ligne la plus
+# informée du marché au coup d'envoi, et « battre la clôture » ne veut dire
+# quelque chose que par rapport à elle. Les autres valeurs que football-data
+# peut poser dans odds_source ne conviennent pas :
+#   - `avg_close`   : moyenne d'un panel de books, marges hétérogènes, tirée
+#                     vers le bas par les books soft — un CLV positif contre
+#                     cette moyenne peut n'être qu'une marge soft, pas un edge ;
+#   - `pinnacle_open` / `avg_open` : ce sont des OUVERTURES. Comparer une cote
+#                     prise à J-3 à une ouverture ne mesure pas « la cote a-t-elle
+#                     raccourci jusqu'à la clôture » — souvent le signe s'inverse.
+#
+# Un CLV calculé contre ces lignes-là ne serait pas un CLV « approximatif » :
+# ce serait une autre grandeur, publiée sous le nom de CLV. On préfère donc ne
+# rien poser et dire pourquoi (`bets[].clv_skipped`) plutôt que de gonfler
+# l'échantillon avec des valeurs non comparables.
+CLV_SHARP_SOURCES = ("pinnacle_close",)
+CLV_SKIP_REASONS = {
+    "no_closing_odds": "aucune cote de clôture en base pour ce match "
+                       "(odds_* NULL), ou résultat saisi manuellement",
+    "source_not_sharp": f"cote de clôture d'une source non sharp "
+                        f"(CLV exigé sur {'/'.join(CLV_SHARP_SOURCES)})",
+}
+
+
+def clv_source_ok(closing_odds):
+    """(acceptable ?, raison_de_refus) pour un bloc de cotes de clôture."""
+    if not closing_odds:
+        return False, "no_closing_odds"
+    if closing_odds.get("source") not in CLV_SHARP_SOURCES:
+        return False, "source_not_sharp"
+    return True, None
 
 
 def settle_entry(entry, actual, actual_ht=None, closing_odds=None):
@@ -657,19 +904,34 @@ def settle_entry(entry, actual, actual_ht=None, closing_odds=None):
     théorique son CLV (closing line value) : l'écart entre la cote prise et
     cette clôture. C'est la mesure qui répond à la question qu'un ROI sur
     quelques dizaines de paris ne peut pas trancher — le pari avait-il une
-    vraie value, ou la cote prise était-elle simplement mauvaise/périmée ?"""
+    vraie value, ou la cote prise était-elle simplement mauvaise/périmée ?
+
+    Le CLV n'est posé que si `closing_odds["source"]` est une clôture sharp
+    (CLV_SHARP_SOURCES). Sinon le pari reçoit `clv_skipped` avec la raison, et
+    reste hors de la statistique CLV : mieux vaut un échantillon plus petit mais
+    homogène qu'un chiffre qui mélange clôtures sharp, moyennes de books et
+    ouvertures sous une même étiquette.
+    """
     entry["actual_score"] = actual
     entry["actual_ht"] = actual_ht
     if closing_odds is not None:
         entry["closing_odds"] = closing_odds
+    sharp_ok, skip_reason = clv_source_ok(closing_odds)
     winner = ISSUES[_outcome_index_score(actual)]
     for bet in entry.get("bets") or []:
         if "realized_pct" not in bet:
             stake, odds = float(bet["stake_pct"]), float(bet["odds"])
             gain = stake * (odds - 1.0) if bet["issue"] == winner else -stake
             bet["realized_pct"] = round(gain, 6)
-        if "clv_pct" not in bet and closing_odds and closing_odds.get(bet["issue"]):
+        if "clv_pct" in bet:
+            continue
+        if sharp_ok and closing_odds.get(bet["issue"]):
             bet["clv_pct"] = round(float(bet["odds"]) / float(closing_odds[bet["issue"]]) - 1.0, 6)
+            bet.pop("clv_skipped", None)
+        else:
+            # issue absente d'un bloc pourtant sharp : la clôture manque pour
+            # CETTE issue, ce qui est bien un défaut de clôture.
+            bet["clv_skipped"] = skip_reason or "no_closing_odds"
     return entry
 
 
@@ -788,9 +1050,13 @@ def sync_results(conn, path, as_of=None):
             closing = {"home": row["odds_h"], "draw": row["odds_d"], "away": row["odds_a"],
                       "source": row["odds_source"]}
         settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht, closing)
+        bets = e.get("bets") or []
         synced.append({"match": e["match"], "date": e["date"],
                        "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift,
-                       "bets_clv": [b["clv_pct"] for b in (e.get("bets") or []) if "clv_pct" in b]})
+                       "bets_clv": [b["clv_pct"] for b in bets if "clv_pct" in b],
+                       "clv_skipped": [b["clv_skipped"] for b in bets
+                                       if "clv_pct" not in b and b.get("clv_skipped")],
+                       "closing_source": (closing or {}).get("source")})
     if synced:
         save_journal(path, entries)
     return synced, pending
@@ -822,6 +1088,30 @@ def relative_delta(brier, brier_market):
     que la routine de suivi mensuel demande de confronter au chiffre du mois.
     L'écart absolu qui figurait ici valait ~1,75× moins sur les mêmes données."""
     return (brier - brier_market) / brier_market * 100
+
+
+def paired_briers(entries):
+    """(Brier FINAL, Brier marché) match par match, sur les entrées qui ont les
+    DEUX — séries appariées, dans le même ordre, prêtes pour le bootstrap.
+
+    Les entrées sans `market_probs` (modèle pur) sont exclues des deux séries :
+    un Δ vs marché ne se calcule que là où le marché existe."""
+    model_b, market_b = [], []
+    for e in entries:
+        if not e.get("market_probs"):
+            continue
+        outcome = _outcome_index_score(e["actual_score"])
+        model_b.append(backtest.brier(_probs_tuple(e["probs"]), outcome))
+        market_b.append(backtest.brier(_probs_tuple(e["market_probs"]), outcome))
+    return model_b, market_b
+
+
+def delta_ci(entries):
+    """(point, bas, haut) de l'écart relatif au marché, par bootstrap apparié."""
+    model_b, market_b = paired_briers(entries)
+    if not model_b:
+        return None, None, None
+    return bootstrap.ci_relative_delta(model_b, market_b)
 
 
 def month_metrics(entries):
@@ -910,8 +1200,8 @@ def freshness_section(settled):
              f"{DEFAULT_BLEND:.0%}, ≥ {STALE_MIN_DAYS} j = plancher {STALE_FLOOR:.0%}. "
              f"Le Brier global mélange les deux régimes ; c'est ici que se voit une "
              f"sous-performance propre aux cotes périmées.", "",
-             "| Fraîcheur | n | Brier | Brier marché | Δ vs marché | Lecture |",
-             "| --- | --- | --- | --- | --- | --- |"]
+             "| Fraîcheur | n | Brier | Brier marché | Δ vs marché | IC 95 % du Δ | Lecture |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
     deltas = {}
     for key in BUCKET_ORDER:
         rows = by_bucket.get(key)
@@ -919,6 +1209,7 @@ def freshness_section(settled):
             continue
         m = month_metrics(rows)
         bmkt = f"{m['brier_market']:.4f}" if m["brier_market"] is not None else "—"
+        ci = "—"
         if m["n"] < BUCKET_MIN_N:
             delta, read = "—", f"indicative (n < {BUCKET_MIN_N})"
         elif m["brier_market"] is None:
@@ -928,25 +1219,44 @@ def freshness_section(settled):
         else:
             d = relative_delta(m["brier"], m["brier_market"])
             deltas[key] = d
+            _, lo, hi = delta_ci(rows)
+            ci = bootstrap.fmt_ci(lo, hi)
             delta, read = f"{d:+.2f} %", "exploitable"
         lines.append(f"| {labels[key]} | {m['n']} | {m['brier']:.4f} | {bmkt} | "
-                     f"{delta} | {read} |")
+                     f"{delta} | {ci} | {read} |")
     lines.append("")
 
     stale, fresh = deltas.get("perimees"), deltas.get("fraiches")
     if stale is not None and fresh is not None:
         gap = stale - fresh
-        if gap > STALE_ALERT_GAP_PCT:
+        sm, smk = paired_briers(by_bucket["perimees"])
+        fm, fmk = paired_briers(by_bucket["fraiches"])
+        _, glo, ghi = bootstrap.ci_gap_relative_delta(sm, smk, fm, fmk)
+        gap_ci = bootstrap.fmt_ci(glo, ghi, unit="pts")
+        # Deux conditions pour alerter, pas une : l'écart doit dépasser le seuil
+        # ET son intervalle doit exclure 0. Sur n ≈ 15 par bucket, un écart de
+        # 3 pts sort tout seul du bruit une fois sur deux ; alerter dessus, c'est
+        # se préparer à réviser un barème validé en backtest sur du hasard.
+        significant = bootstrap.excludes_zero(glo, ghi)
+        if gap > STALE_ALERT_GAP_PCT and significant:
             lines += [f"⚠ Les cotes périmées performent moins bien que prévu par le "
                       f"backtest — le garde-fou mérite d'être revu.",
                       "",
                       f"  (Δ vs marché : {stale:+.2f} % sur cotes périmées contre "
-                      f"{fresh:+.2f} % sur cotes fraîches, soit {gap:+.2f} pts d'écart, "
-                      f"au-delà du seuil de {STALE_ALERT_GAP_PCT:.0f} pts. À relire sur un "
-                      f"trimestre complet avant de toucher au barème.)", ""]
+                      f"{fresh:+.2f} % sur cotes fraîches, soit {gap:+.2f} pts d'écart "
+                      f"{gap_ci}, au-delà du seuil de {STALE_ALERT_GAP_PCT:.0f} pts et "
+                      f"distinguable du bruit. À relire sur un trimestre complet avant "
+                      f"de toucher au barème.)", ""]
+        elif gap > STALE_ALERT_GAP_PCT:
+            lines += [f"- Écart périmées − fraîches : {gap:+.2f} pts de Δ vs marché "
+                      f"{gap_ci} — au-dessus du seuil de {STALE_ALERT_GAP_PCT:.0f} pts, "
+                      f"mais l'intervalle contient 0 : **pas d'alerte**, l'écart n'est "
+                      f"pas distinguable du bruit d'échantillonnage. À revoir quand les "
+                      f"deux buckets auront grossi.", ""]
         else:
             lines += [f"- Écart périmées − fraîches : {gap:+.2f} pt(s) de Δ vs marché "
-                      f"(seuil d'alerte {STALE_ALERT_GAP_PCT:.0f} pts) — le barème tient.", ""]
+                      f"{gap_ci} (seuil d'alerte {STALE_ALERT_GAP_PCT:.0f} pts) — "
+                      f"le barème tient.", ""]
     elif "perimees" in by_bucket:
         lines += [f"- Comparaison périmées vs fraîches indisponible : il faut "
                   f"n ≥ {BUCKET_MIN_N} avec cotes dans LES DEUX buckets.", ""]
@@ -1009,19 +1319,42 @@ CLV_MIN_BETS = 20   # bien plus bas que ROI_MIN_BETS : le CLV converge plus vite
                      # mais reste indicatif en-deçà de ce seuil.
 
 
+def clv_values(settled):
+    """CLV de chaque pari réglé dont la clôture sharp est connue."""
+    return [float(b["clv_pct"]) for e in settled for b in (e.get("bets") or [])
+            if "clv_pct" in b]
+
+
 def clv_summary(settled):
     """(n, clv_moyen, taux_positif) sur les paris dont la clôture est connue."""
-    vals = [float(b["clv_pct"]) for e in settled for b in (e.get("bets") or [])
-            if "clv_pct" in b]
+    vals = clv_values(settled)
     if not vals:
         return 0, None, None
     n = len(vals)
     return n, sum(vals) / n, sum(1 for v in vals if v > 0) / n
 
 
+def clv_skipped_summary(settled):
+    """{raison: nombre de paris réglés sans CLV} — pourquoi l'échantillon est petit.
+
+    Sans ce comptage, un « 4 paris avec clôture connue » ne dit pas si les
+    autres attendent la source ou ont été écartés faute de ligne sharp. Le
+    second cas est structurel (la base n'a que la moyenne du marché pour ce
+    match) et ne se résoudra pas en attendant."""
+    counts = {}
+    for e in settled:
+        for b in e.get("bets") or []:
+            if "clv_pct" in b or "realized_pct" not in b:
+                continue
+            reason = b.get("clv_skipped") or "no_closing_odds"
+            counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
 def clv_section(settled):
     """Lignes markdown de la section « CLV (closing line value) »."""
     n, avg, positive = clv_summary(settled)
+    skipped = clv_skipped_summary(settled)
     lines = ["## CLV (closing line value)", "",
              "Écart entre la cote prise et la cote de clôture (`matches.odds_*`, "
              "posée par `sync-results`) sur chaque pari théorique réglé : "
@@ -1030,26 +1363,58 @@ def clv_section(settled):
              "= elle s'est détendue (la « value » vue au moment du pari a fondu, "
              "voire n'en était pas une). Le CLV converge plus vite que le ROI "
              "réel — c'est le premier signal à lire sur un petit échantillon.",
+             "",
+             f"**Clôture sharp exigée** : seuls les paris dont la clôture porte "
+             f"`odds_source` ∈ {{{', '.join('`' + x + '`' for x in CLV_SHARP_SOURCES)}}} "
+             f"entrent ici. Une moyenne de books (`avg_close`) ou une ouverture "
+             f"(`*_open`) mesurerait autre chose sous le même nom : battre une "
+             f"moyenne tirée par des books soft n'est pas battre le marché, et "
+             f"comparer à une ouverture inverse souvent le signe. Les paris "
+             f"écartés sont comptés ci-dessous, jamais mélangés à la moyenne.",
              ""]
     if not n:
-        lines += ["Aucun pari réglé avec cote de clôture connue : soit aucun "
-                  "pari théorique n'a encore de résultat, soit la clôture était "
-                  "absente en base pour ces matchs (`odds_h/d/a` NULL).", ""]
+        lines += ["Aucun pari réglé avec clôture sharp connue : soit aucun "
+                  "pari théorique n'a encore de résultat, soit la clôture "
+                  "sharp manquait pour ces matchs.", ""]
+        lines += _clv_skipped_lines(skipped)
         return lines
-    lines += [f"- {n} pari(s) avec clôture connue — CLV moyen {avg:+.2%}, "
-              f"positif sur {positive:.0%} des paris."]
+    _, lo, hi = bootstrap.ci_mean(clv_values(settled))
+    ci_txt = f" — IC 95 % {bootstrap.fmt_ci(lo * 100, hi * 100)}" if lo is not None else ""
+    lines += [f"- {n} pari(s) avec clôture sharp — CLV moyen {avg:+.2%}, "
+              f"positif sur {positive:.0%} des paris{ci_txt}."]
+    significant = bootstrap.excludes_zero(lo, hi)
     if n < CLV_MIN_BETS:
         lines.append(f"- ⚠ {n} pari(s) (< {CLV_MIN_BETS}) : lecture indicative — "
                      f"le CLV converge vite mais pas instantanément.")
+    elif significant is False:
+        lines.append("- CLV moyen non distinguable de zéro (l'IC contient 0) : "
+                     "les paris pris ne devancent ni ne suivent le marché de "
+                     "façon mesurable. Pas d'edge démontré, pas d'alerte non plus.")
     elif avg < 0:
-        lines.append("- ⚠ CLV moyen négatif sur un échantillon exploitable : les "
-                     "cotes prises perdent en moyenne de la valeur avant la "
-                     "clôture — signe que l'edge apparent au moment du pari "
-                     "n'était probablement pas réel.")
+        lines.append("- ⚠ CLV moyen négatif ET distinguable de zéro : les cotes "
+                     "prises perdent de la valeur avant la clôture — signe que "
+                     "l'edge apparent au moment du pari n'était pas réel.")
     else:
-        lines.append("- CLV moyen positif sur un échantillon exploitable : "
-                     "cohérent avec un vrai edge (à confirmer par le ROI réel "
-                     "une fois n ≥ 100).")
+        lines.append("- CLV moyen positif et distinguable de zéro : cohérent avec "
+                     "un vrai edge (à confirmer par le ROI réel une fois n ≥ 100).")
+    lines.append("")
+    lines += _clv_skipped_lines(skipped)
+    return lines
+
+
+def _clv_skipped_lines(skipped):
+    """Détail des paris réglés restés sans CLV, par raison."""
+    if not skipped:
+        return []
+    total = sum(skipped.values())
+    lines = [f"Paris réglés sans CLV ({total}) :"]
+    for reason, count in sorted(skipped.items()):
+        lines.append(f"- `{reason}` × {count} — "
+                     f"{CLV_SKIP_REASONS.get(reason, 'raison inconnue')}.")
+    if skipped.get("source_not_sharp"):
+        lines.append("  Ces paris-là n'attendent rien : la base n'a pas de clôture "
+                     "sharp pour ces matchs, relancer `sync-results` n'y changera "
+                     "rien.")
     lines.append("")
     return lines
 
@@ -1071,24 +1436,35 @@ def build_calibration_report(path, month_filter=None):
               f"« Δ vs marché » = écart **relatif** (Brier − Brier marché) / Brier marché, "
               f"même échelle que le backtest (M3.5 : +1,78 % du marché).", ""]
     lines += ["## Par mois", "",
-              "| Mois | n | Brier | Brier marché | Δ vs marché | RPS | Issue OK | Score exact | Nuls prédits/obs |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
-    for month in sorted(by_month):
-        m = month_metrics(by_month[month])
+              "| Mois | n | Brier | Brier marché | Δ vs marché | IC 95 % du Δ | RPS | Issue OK | Score exact | Nuls prédits/obs |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+
+    def month_row(label, entries):
+        m = month_metrics(entries)
         bmkt = f"{m['brier_market']:.4f}" if m["brier_market"] is not None else "—"
-        delta = (f"{relative_delta(m['brier'], m['brier_market']):+.2f} %"
-                 if m["brier_market"] is not None else "—")
-        lines.append(f"| {month} | {m['n']} | {m['brier']:.4f} | {bmkt} | {delta} | "
-                     f"{m['rps']:.4f} | {m['issue_rate']:.0%} | {m['exact_rate']:.0%} | "
-                     f"{m['draw_pred']:.0%} / {m['draw_obs']:.0%} |")
+        if m["brier_market"] is None:
+            delta, ci = "—", "—"
+        else:
+            point, lo, hi = delta_ci(entries)
+            delta = f"{relative_delta(m['brier'], m['brier_market']):+.2f} %"
+            ci = bootstrap.fmt_ci(lo, hi)
+        return (f"| {label} | {m['n']} | {m['brier']:.4f} | {bmkt} | {delta} | {ci} | "
+                f"{m['rps']:.4f} | {m['issue_rate']:.0%} | {m['exact_rate']:.0%} | "
+                f"{m['draw_pred']:.0%} / {m['draw_obs']:.0%} |")
+
+    for month in sorted(by_month):
+        lines.append(month_row(month, by_month[month]))
     overall = month_metrics(settled)
-    bmkt = f"{overall['brier_market']:.4f}" if overall["brier_market"] is not None else "—"
-    delta = (f"{relative_delta(overall['brier'], overall['brier_market']):+.2f} %"
-             if overall["brier_market"] is not None else "—")
-    lines.append(f"| **Total** | {overall['n']} | {overall['brier']:.4f} | {bmkt} | {delta} | "
-                 f"{overall['rps']:.4f} | {overall['issue_rate']:.0%} | "
-                 f"{overall['exact_rate']:.0%} | {overall['draw_pred']:.0%} / {overall['draw_obs']:.0%} |")
+    lines.append(month_row("**Total**", settled))
     lines.append("")
+    lines += [f"L'IC 95 % est un bootstrap **apparié** ({bootstrap.DEFAULT_RESAMPLES} "
+              f"rééchantillonnages de matchs, graine {bootstrap.DEFAULT_SEED} pour que "
+              f"le rapport se régénère à l'identique) : modèle et marché sont notés sur "
+              f"les mêmes matchs, on rééchantillonne donc les matchs, pas deux séries "
+              f"indépendantes. Un intervalle qui contient 0 veut dire que le mois ne "
+              f"permet pas de distinguer le FINAL du marché — c'est le cas normal sur "
+              f"quelques dizaines de matchs, et la raison pour laquelle un Δ mensuel "
+              f"isolé ne justifie jamais de toucher aux réglages figés.", ""]
 
     lines += freshness_section(settled)
     lines += roi_section(settled)
@@ -1251,24 +1627,37 @@ def cmd_match(args, conn):
         else:
             lineup_adjustment = load_lineup_adjustment(args.lineup_adjustment)
 
-    fit_cache = {}
-    without_odds = []
-    for i, (league, home, away) in enumerate(fixtures):
+    for league, _, _ in fixtures:
         if league not in footballdata.LEAGUES:
             sys.exit(f"Ligue inconnue '{league}' (attendu {footballdata.LEAGUES}).")
+
+    # Deux passes : le plafond d'exposition porte sur la SOMME des mises du run,
+    # il ne peut donc pas se décider pendant qu'on imprime match par match.
+    fit_cache = {}
+    results = [predict_match(conn, cfg, league, home, away, target_date,
+                             args.odds if len(fixtures) == 1 else [], odds_age,
+                             args.blend, fit_cache, no_odds_reason, lineup_adjustment,
+                             args.devig)
+               for league, home, away in fixtures]
+    # Le run courant réécrit ses propres entrées non réglées : elles ne comptent
+    # pas comme exposition « déjà engagée » (sinon un ré-run se plafonnerait seul).
+    rewritten = [(f"{r['home']}-{r['away']}", r["date"].isoformat()) for r in results]
+    prior, prior_bets = pending_exposure(args.log, target_date, rewritten)
+    exposure = apply_exposure_cap(results, args.exposure_cap, args.no_stake,
+                                  prior, prior_bets)
+
+    for i, res in enumerate(results):
         if i:
             print("\n" + "=" * 72 + "\n")
-        res = predict_match(conn, cfg, league, home, away, target_date,
-                            args.odds if len(fixtures) == 1 else [], odds_age,
-                            args.blend, fit_cache, no_odds_reason, lineup_adjustment)
         print_prediction(res, cfg, contest, args.contest_exact_bonus, args.no_stake)
-        if res["market"] is None:
-            without_odds.append(res)
         if not args.no_log:
             log_prediction(args.log, res, args.no_stake)
-    recap = no_odds_recap(without_odds, len(fixtures))
+    recap = no_odds_recap([r for r in results if r["market"] is None], len(fixtures))
     if recap:
         print("\n" + recap)
+    exp = exposure_recap(exposure)
+    if exp:
+        print("\n" + exp)
     if not args.no_log:
         print(f"\n{len(fixtures)} prédiction(s) journalisée(s) dans {args.log}.")
 
@@ -1290,7 +1679,10 @@ def cmd_sync_results(args, conn):
         print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}")
         for clv in s.get("bets_clv") or []:
             tag = "bat la clôture" if clv > 0 else "clôture plus favorable" if clv < 0 else "= clôture"
-            print(f"        CLV {clv:+.2%} ({tag})")
+            print(f"        CLV {clv:+.2%} ({tag}, vs {s.get('closing_source')})")
+        for reason in s.get("clv_skipped") or []:
+            print(f"        CLV non calculé — {CLV_SKIP_REASONS.get(reason, reason)}"
+                  + (f" (source en base : {s['closing_source']})" if s.get("closing_source") else ""))
     if pending:
         print("\nEn attente de données source :")
         for p in pending:
@@ -1336,6 +1728,11 @@ def build_parser():
     p.add_argument("--blend", type=float, default=DEFAULT_BLEND,
                    help=f"Poids marché de base sur cotes fraîches (défaut {DEFAULT_BLEND:g} ; "
                         f"décroît vers un plancher de {STALE_FLOOR:.0%} si périmées)")
+    p.add_argument("--devig", choices=DEVIG_METHODS, default=DEVIG_METHOD,
+                   help=f"Méthode de démargeage des cotes (défaut {DEVIG_METHOD} : "
+                        f"marge modélisée à la Shin plutôt qu'un exposant libre ; "
+                        f"comparaison des trois méthodes dans devig_check.py). "
+                        f"Journalisé dans meta.devig.")
     p.add_argument("--contest-points", default=None, metavar="H,N,A",
                    help="MODE CONCOURS : points si l'issue est correcte (ex: 13,50,68)")
     p.add_argument("--contest-exact-bonus", type=float, default=0.0, metavar="B",
@@ -1350,6 +1747,16 @@ def build_parser():
                         "dérivés de xG par titulaire confirmé vs référence — voir "
                         "load_lineup_adjustment). Journalisé dans meta.lineup_adjustment. "
                         "Ignoré pour un slate (--fixture répété) — un seul match à la fois.")
+    p.add_argument("--exposure-cap", type=float, default=SLATE_EXPOSURE_CAP,
+                   metavar="FRACTION",
+                   help=f"Plafond d'exposition SIMULTANÉE sur l'ensemble du run "
+                        f"(défaut {SLATE_EXPOSURE_CAP:g} = {SLATE_EXPOSURE_CAP:.0%} de "
+                        f"bankroll). Au-delà, toutes les mises sont réduites d'un même "
+                        f"facteur. Le cumul inclut les paris non réglés de la MÊME "
+                        f"SEMAINE déjà présents dans le journal — c'est là que "
+                        f"l'exposition d'un slate généré match par match s'accumule. "
+                        f"Sans effet sur un match seul isolé (3 issues × 5 % = "
+                        f"{SLATE_EXPOSURE_CAP:.0%}).")
     p.add_argument("--no-stake", action="store_true", help="désactive la section mise suggérée")
     p.add_argument("--no-log", action="store_true", help="ne pas journaliser la prédiction")
     p.set_defaults(func=cmd_match)

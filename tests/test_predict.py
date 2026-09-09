@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 
+import backtest
 import backtest35
 import db
 import footballdata
@@ -110,6 +111,22 @@ class TestRiskParameters(unittest.TestCase):
                          "seuil de cotes fraîches : J-1, borne du barème documenté")
         self.assertEqual(predict.STALE_MIN_DAYS, 5,
                          "seuil de cotes périmées : J-5, borne du barème documenté")
+        self.assertEqual(predict.SLATE_EXPOSURE_CAP, 0.15,
+                         "plafond d'exposition simultanée : 15 % de bankroll sur un "
+                         "slate entier, soit 3 × le plafond individuel — l'augmenter "
+                         "expose la bankroll à plusieurs matchs joués en même temps")
+        # cohérence des deux plafonds : un match seul (3 issues) ne doit jamais
+        # être réduit, sinon le plafond de slate mordrait hors de son objet.
+        cap_individuel = inspect.signature(predict.kelly_stake).parameters["cap"].default
+        self.assertGreaterEqual(round(predict.SLATE_EXPOSURE_CAP, 9),
+                                round(3 * cap_individuel, 9),
+                                "le plafond de slate doit couvrir un match seul")
+        self.assertEqual(predict.DEVIG_METHOD, "shin",
+                         "démargeage de production : Shin, choix de rigueur documenté "
+                         "dans devig_check.py (aucun gain de Brier mesuré)")
+        self.assertEqual(predict.CLV_SHARP_SOURCES, ("pinnacle_close",),
+                         "CLV calculé uniquement contre une clôture sharp : élargir "
+                         "cette liste changerait la grandeur mesurée, pas sa précision")
         # le défaut du CLI doit rester branché sur la constante, pas figé à part
         default_blend = predict.build_parser().parse_args(
             ["match", "--league", "E0", "--home", "A", "--away", "B"]).blend
@@ -377,7 +394,8 @@ class TestFreshnessSection(unittest.TestCase):
                    if l.startswith("| " + predict.bucket_labels()["perimees"]))
         self.assertEqual(row.split("|")[2].strip(), "3")
         self.assertEqual(row.split("|")[5].strip(), "—")       # aucun delta
-        self.assertIn("indicative", row.split("|")[6])
+        self.assertEqual(row.split("|")[6].strip(), "—")       # ni IC
+        self.assertIn("indicative", row.split("|")[7])
 
     # Les deux tests d'alerte encadrent le seuil sur l'échelle RELATIVE :
     # marché = {0.55, 0.25, 0.20}, issue domicile -> Brier marché = 0.305.
@@ -547,7 +565,7 @@ class TestClv(unittest.TestCase):
 
     def test_negative_clv_when_price_drifted_the_other_way(self):
         entry = {"bets": [{"issue": "home", "odds": 1.8, "stake_pct": 0.02}]}
-        closing = {"home": 2.1, "draw": 3.2, "away": 3.6}
+        closing = {"home": 2.1, "draw": 3.2, "away": 3.6, "source": "pinnacle_close"}
         predict.settle_entry(entry, "1-0", closing_odds=closing)
         self.assertLess(entry["bets"][0]["clv_pct"], 0.0)
 
@@ -560,12 +578,14 @@ class TestClv(unittest.TestCase):
     def test_clv_never_recomputed_once_set(self):
         entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
                            "clv_pct": 0.05}]}
-        predict.settle_entry(entry, "1-0", closing_odds={"home": 9.9})
+        predict.settle_entry(entry, "1-0",
+                             closing_odds={"home": 9.9, "source": "pinnacle_close"})
         self.assertEqual(entry["bets"][0]["clv_pct"], 0.05)
 
     def test_missing_issue_in_closing_odds_leaves_clv_absent(self):
         entry = {"bets": [{"issue": "draw", "odds": 3.4, "stake_pct": 0.01}]}
-        predict.settle_entry(entry, "1-0", closing_odds={"home": 2.0, "away": 3.5})
+        predict.settle_entry(entry, "1-0", closing_odds={"home": 2.0, "away": 3.5,
+                                                         "source": "pinnacle_close"})
         self.assertNotIn("clv_pct", entry["bets"][0])
 
     def test_sync_results_fills_clv_from_matches_table(self):
@@ -619,12 +639,12 @@ class TestClv(unittest.TestCase):
         lines = predict.clv_section(settled)
         text = "\n".join(lines)
         self.assertIn("## CLV (closing line value)", text)
-        self.assertIn("2 pari(s) avec clôture connue", text)
+        self.assertIn("2 pari(s) avec clôture sharp", text)
         self.assertIn("indicative", text)
 
     def test_clv_section_without_any_clv_data(self):
         text = "\n".join(predict.clv_section([{"bets": []}]))
-        self.assertIn("Aucun pari réglé avec cote de clôture connue", text)
+        self.assertIn("Aucun pari réglé avec clôture sharp connue", text)
 
     def test_report_includes_clv_section(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1151,3 +1171,434 @@ class TestNoOddsReasonCli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDevigIntegration(unittest.TestCase):
+    """Le démargeage de production : Shin par défaut, méthode tracée au journal."""
+
+    def test_default_is_shin(self):
+        self.assertEqual(predict.DEVIG_METHOD, "shin")
+        self.assertIn("shin", predict.DEVIG_METHODS)
+
+    def test_consensus_uses_the_requested_method(self):
+        book = (1.20, 7.00, 15.0)
+        for method in predict.DEVIG_METHODS:
+            market, _ = predict.market_consensus([book], method)
+            expected = backtest.DEMARGIN_METHODS[method](*book)
+            self.assertAlmostEqual(market["home"], expected[0], places=9)
+            self.assertAlmostEqual(sum(market.values()), 1.0, places=9)
+
+    def test_shin_and_power_disagree_on_a_lopsided_book(self):
+        """Sanity : les deux méthodes ne sont pas le même code déguisé — sinon
+        le choix journalisé ne voudrait rien dire."""
+        book = [(1.20, 7.00, 15.0)]
+        shin, _ = predict.market_consensus(book, "shin")
+        power, _ = predict.market_consensus(book, "power")
+        self.assertNotAlmostEqual(shin["away"], power["away"], places=4)
+
+    def test_unknown_method_exits(self):
+        with self.assertRaises(SystemExit):
+            predict.market_consensus([(1.85, 3.6, 4.4)], "inexistante")
+
+    def test_each_book_is_demargined_before_averaging(self):
+        """Démarger la moyenne des cotes mélangerait des marges hétérogènes ;
+        on démarge chaque book PUIS on moyenne."""
+        books = [(1.85, 3.60, 4.40), (2.10, 3.30, 3.90)]
+        market, best = predict.market_consensus(books, "shin")
+        fairs = [backtest.demargin_shin(*b) for b in books]
+        self.assertAlmostEqual(market["home"], (fairs[0][0] + fairs[1][0]) / 2, places=9)
+        self.assertEqual(best["home"], 2.10)      # meilleure cote brute, pas la moyenne
+
+    def test_cli_default_and_choices(self):
+        args = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "A", "--away", "B"])
+        self.assertEqual(args.devig, predict.DEVIG_METHOD)
+        args = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "A", "--away", "B", "--devig", "power"])
+        self.assertEqual(args.devig, "power")
+
+    def test_journal_records_the_method(self):
+        res = {
+            "league": "E0", "home": "A", "away": "B",
+            "date": datetime.date(2026, 8, 15),
+            "lam_h": 1.5, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+            "final": {"home": 0.5, "draw": 0.28, "away": 0.22},
+            "market": {"home": 0.49, "draw": 0.28, "away": 0.23},
+            "best_odds": None, "devig": "shin",
+            "grid": {(1, 0): 0.4, (1, 1): 0.35, (0, 1): 0.25},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, res)
+            self.assertEqual(json.loads(path.read_text())[0]["meta"]["devig"], "shin")
+
+
+class TestClvRequiresSharpClosing(unittest.TestCase):
+    """Le CLV n'a de sens que contre une vraie clôture sharp (Pinnacle)."""
+
+    def _entry(self):
+        return {"bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}]}
+
+    def test_sharp_source_is_accepted(self):
+        entry = self._entry()
+        predict.settle_entry(entry, "1-2", closing_odds={
+            "home": 4.8, "draw": 3.4, "away": 1.9, "source": "pinnacle_close"})
+        self.assertAlmostEqual(entry["bets"][0]["clv_pct"], 5.1 / 4.8 - 1.0, places=6)
+        self.assertNotIn("clv_skipped", entry["bets"][0])
+
+    def test_market_average_closing_is_refused(self):
+        """`avg_close` est une moyenne de books aux marges hétérogènes : la
+        battre n'est pas battre le marché. On ne pose pas de CLV dessus."""
+        entry = self._entry()
+        predict.settle_entry(entry, "1-2", closing_odds={
+            "home": 4.8, "draw": 3.4, "away": 1.9, "source": "avg_close"})
+        self.assertNotIn("clv_pct", entry["bets"][0])
+        self.assertEqual(entry["bets"][0]["clv_skipped"], "source_not_sharp")
+        # la clôture reste tracée, c'est seulement le CLV qui n'est pas calculé
+        self.assertEqual(entry["closing_odds"]["source"], "avg_close")
+
+    def test_opening_line_is_refused(self):
+        for source in ("pinnacle_open", "avg_open"):
+            entry = self._entry()
+            predict.settle_entry(entry, "1-2", closing_odds={
+                "home": 4.8, "draw": 3.4, "away": 1.9, "source": source})
+            self.assertNotIn("clv_pct", entry["bets"][0])
+            self.assertEqual(entry["bets"][0]["clv_skipped"], "source_not_sharp")
+
+    def test_untagged_closing_is_refused(self):
+        """Pas de source = on ne sait pas ce qu'on compare : refus, pas pari."""
+        entry = self._entry()
+        predict.settle_entry(entry, "1-2", closing_odds={"home": 4.8, "draw": 3.4,
+                                                         "away": 1.9})
+        self.assertNotIn("clv_pct", entry["bets"][0])
+        self.assertEqual(entry["bets"][0]["clv_skipped"], "source_not_sharp")
+
+    def test_manual_result_marks_missing_closing(self):
+        entry = self._entry()
+        predict.settle_entry(entry, "1-2")
+        self.assertEqual(entry["bets"][0]["clv_skipped"], "no_closing_odds")
+
+    def test_sync_results_refuses_non_sharp_source_from_db(self):
+        conn = db.connect(":memory:")
+        db.upsert_match(conn, {"date": "2026-09-14", "league": "E0", "season": "2627",
+                               "home": "Leeds", "away": "Newcastle", "fthg": 1, "ftag": 2,
+                               "odds_h": 4.8, "odds_d": 3.4, "odds_a": 1.9,
+                               "odds_source": "avg_close"})
+        conn.commit()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                 "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                 "predicted_score": "1-2",
+                 "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}],
+                 "actual_score": None, "actual_ht": None,
+                 "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}]))
+            synced, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 9, 20))
+            self.assertEqual(synced[0]["bets_clv"], [])
+            self.assertEqual(synced[0]["clv_skipped"], ["source_not_sharp"])
+            self.assertEqual(synced[0]["closing_source"], "avg_close")
+            entry = json.loads(path.read_text())[0]
+            self.assertNotIn("clv_pct", entry["bets"][0])
+            # le résultat, lui, est bien synchronisé : seul le CLV est écarté
+            self.assertEqual(entry["actual_score"], "1-2")
+        conn.close()
+
+    def test_report_counts_the_refused_bets(self):
+        settled = [
+            {"bets": [{"issue": "home", "odds": 2.0, "stake_pct": 0.01,
+                       "realized_pct": 0.01, "clv_pct": 0.03}]},
+            {"bets": [{"issue": "away", "odds": 3.0, "stake_pct": 0.01,
+                       "realized_pct": -0.01, "clv_skipped": "source_not_sharp"}]},
+            {"bets": [{"issue": "draw", "odds": 3.4, "stake_pct": 0.01,
+                       "realized_pct": -0.01, "clv_skipped": "no_closing_odds"}]},
+        ]
+        self.assertEqual(predict.clv_skipped_summary(settled),
+                         {"source_not_sharp": 1, "no_closing_odds": 1})
+        text = "\n".join(predict.clv_section(settled))
+        self.assertIn("Clôture sharp exigée", text)
+        self.assertIn("`source_not_sharp` × 1", text)
+        self.assertIn("`no_closing_odds` × 1", text)
+        self.assertIn("relancer `sync-results` n'y changera rien", text)
+
+    def test_unsettled_bets_are_not_counted_as_refused(self):
+        """Un pari dont le match n'est pas encore joué n'a pas « raté » son CLV."""
+        self.assertEqual(
+            predict.clv_skipped_summary([{"bets": [{"issue": "home", "odds": 2.0,
+                                                    "stake_pct": 0.01}]}]), {})
+
+
+class TestSlateExposureCap(unittest.TestCase):
+    """Kelly plafonne chaque pari ; rien ne plafonnait la somme d'un slate."""
+
+    def _res(self, i, final=None, odds=None):
+        return {
+            "league": "E0", "home": f"H{i}", "away": f"A{i}",
+            "date": datetime.date(2026, 8, 15),
+            "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+            "final": final or {"home": 0.60, "draw": 0.22, "away": 0.18},
+            "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+            "best_odds": odds or {"home": 2.50, "draw": 3.60, "away": 4.40},
+            "grid": {(1, 0): 0.4, (1, 1): 0.35, (0, 1): 0.25},
+        }
+
+    def test_single_match_is_never_capped(self):
+        """3 issues × 5 % = 15 % = le plafond : un match seul ne peut pas mordre."""
+        res = self._res(0)
+        summary = predict.apply_exposure_cap([res])
+        self.assertEqual(summary["factor"], 1.0)
+        self.assertEqual(predict.final_stakes(res), predict.match_stakes(res))
+
+    def test_single_match_at_maximum_stakes_is_still_not_capped(self):
+        """Cas limite : les trois issues au plafond individuel, donc exactement
+        15 % — l'arithmétique flottante ne doit pas déclencher une réduction."""
+        res = self._res(0, final={"home": 0.9, "draw": 0.9, "away": 0.9},
+                        odds={"home": 5.0, "draw": 5.0, "away": 5.0})
+        stakes = predict.match_stakes(res)
+        self.assertEqual(len(stakes), 3)
+        self.assertAlmostEqual(sum(stakes.values()), predict.SLATE_EXPOSURE_CAP)
+        self.assertEqual(predict.apply_exposure_cap([res])["factor"], 1.0)
+
+    def test_slate_above_cap_is_scaled_down(self):
+        results = [self._res(i) for i in range(10)]
+        summary = predict.apply_exposure_cap(results)
+        self.assertGreater(summary["gross"], predict.SLATE_EXPOSURE_CAP)
+        self.assertLess(summary["factor"], 1.0)
+        total = sum(sum(predict.final_stakes(r).values()) for r in results)
+        self.assertAlmostEqual(total, predict.SLATE_EXPOSURE_CAP, places=9)
+
+    def test_scaling_is_proportional_not_truncation(self):
+        """On réduit tout le monde du même facteur : tronquer les dernières
+        affiches reviendrait à parier sur l'ordre des fixtures."""
+        strong = self._res(0, final={"home": 0.75, "draw": 0.15, "away": 0.10})
+        weak = self._res(1, final={"home": 0.45, "draw": 0.30, "away": 0.25})
+        results = [strong, weak] + [self._res(i) for i in range(2, 12)]
+        raw_ratio = (predict.match_stakes(strong)["home"]
+                     / predict.match_stakes(weak)["home"])
+        predict.apply_exposure_cap(results)
+        capped_ratio = (predict.final_stakes(strong)["home"]
+                        / predict.final_stakes(weak)["home"])
+        self.assertAlmostEqual(raw_ratio, capped_ratio, places=9)
+        self.assertGreater(predict.final_stakes(strong)["home"],
+                           predict.final_stakes(weak)["home"])
+
+    def test_slate_below_cap_is_untouched(self):
+        results = [self._res(i, final={"home": 0.42, "draw": 0.30, "away": 0.28})
+                   for i in range(2)]
+        summary = predict.apply_exposure_cap(results)
+        self.assertEqual(summary["factor"], 1.0)
+        self.assertLessEqual(summary["gross"], predict.SLATE_EXPOSURE_CAP)
+
+    def test_no_stake_yields_no_exposure(self):
+        results = [self._res(i) for i in range(10)]
+        summary = predict.apply_exposure_cap(results, no_stake=True)
+        self.assertEqual(summary["gross"], 0.0)
+        self.assertEqual(summary["n_bets"], 0)
+        self.assertEqual(predict.exposure_recap(summary), "")
+
+    def test_journal_keeps_capped_and_uncapped_stakes(self):
+        results = [self._res(i) for i in range(10)]
+        predict.apply_exposure_cap(results)
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            for r in results:
+                predict.log_prediction(path, r)
+            entries = json.loads(path.read_text())
+        bet = entries[0]["bets"][0]
+        self.assertLess(bet["stake_pct"], bet["stake_pct_uncapped"])
+        self.assertAlmostEqual(bet["stake_pct"],
+                               round(bet["stake_pct_uncapped"] * bet["exposure_factor"], 6),
+                               places=5)
+        self.assertLess(entries[0]["meta"]["exposure_factor"], 1.0)
+
+    def test_journal_omits_uncapped_fields_when_cap_does_not_bite(self):
+        res = self._res(0)
+        predict.apply_exposure_cap([res])
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, res)
+            entry = json.loads(path.read_text())[0]
+        self.assertNotIn("stake_pct_uncapped", entry["bets"][0])
+        self.assertEqual(entry["meta"]["exposure_factor"], 1.0)
+
+    def test_bets_fall_back_to_raw_stakes_without_a_cap_pass(self):
+        """prediction_bets reste utilisable hors du flux `match` (autre script,
+        test unitaire) : sans passe de plafonnement, les mises sont les brutes."""
+        res = self._res(0)
+        bets = predict.prediction_bets(res)
+        self.assertAlmostEqual(bets[0]["stake_pct"],
+                               round(predict.kelly_stake(0.60, 2.50), 6), places=6)
+
+    def test_recap_mentions_the_reduction(self):
+        results = [self._res(i) for i in range(10)]
+        summary = predict.apply_exposure_cap(results)
+        text = predict.exposure_recap(summary)
+        self.assertIn("Exposition simultanée", text)
+        self.assertIn("réduites", text)
+        self.assertIn(f"{predict.SLATE_EXPOSURE_CAP:.0%}", text)
+
+    def test_recap_says_nothing_alarming_below_cap(self):
+        results = [self._res(0)]
+        text = predict.exposure_recap(predict.apply_exposure_cap(results))
+        self.assertIn("sous le plafond", text)
+        self.assertNotIn("⚠", text)
+
+    def test_cli_exposes_the_cap(self):
+        args = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "A", "--away", "B"])
+        self.assertEqual(args.exposure_cap, predict.SLATE_EXPOSURE_CAP)
+
+
+class TestCalibrationConfidenceIntervals(unittest.TestCase):
+    """Le rapport de production publie ses Δ avec leur incertitude."""
+
+    def _entry(self, i, probs, market, actual="2-1"):
+        return {"match": f"H{i}-A{i}", "date": "2026-08-15", "competition": "E0",
+                "probs": probs, "market_probs": market, "predicted_score": "2-1",
+                "bets": [], "actual_score": actual, "actual_ht": None,
+                "meta": {"model": "M5", "odds_age_days": 1}}
+
+    def _journal(self, d, entries):
+        path = Path(d) / "j.json"
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_paired_series_skip_entries_without_market(self):
+        mkt = {"home": 0.5, "draw": 0.3, "away": 0.2}
+        entries = [self._entry(0, mkt, mkt), self._entry(1, mkt, None)]
+        model_b, market_b = predict.paired_briers(entries)
+        self.assertEqual(len(model_b), 1)
+        self.assertEqual(len(market_b), 1)
+
+    def test_monthly_table_has_a_confidence_interval(self):
+        mkt = {"home": 0.5, "draw": 0.3, "away": 0.2}
+        model = {"home": 0.52, "draw": 0.29, "away": 0.19}
+        entries = [self._entry(i, model, mkt, "2-1" if i % 3 else "1-1")
+                   for i in range(20)]
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertIn("IC 95 % du Δ", text)
+        row = next(l for l in text.splitlines() if l.startswith("| 2026-08 |"))
+        self.assertRegex(row.split("|")[6], r"\[[-+]\d+\.\d+ ; [-+]\d+\.\d+ %\]")
+
+    def test_alert_is_gated_on_a_significant_gap(self):
+        """Écart au-delà du seuil mais noyé dans le bruit : pas d'alerte, et le
+        rapport dit explicitement pourquoi. C'est le garde-fou contre une révision
+        du barème décidée sur quinze matchs de hasard."""
+        mkt = {"home": 0.50, "draw": 0.30, "away": 0.20}
+        stale = {"home": 0.44, "draw": 0.33, "away": 0.23}
+        entries = []
+        for i in range(20):     # fraîches : modèle = marché
+            e = self._entry(i, dict(mkt), dict(mkt), "2-1" if i % 2 else "1-1")
+            entries.append(e)
+        for i in range(20):     # périmées : Δ moyen élevé mais très dispersé
+            probs = dict(stale) if i % 2 else dict(mkt)
+            e = self._entry(100 + i, probs, dict(mkt), "2-1" if i % 3 else "0-2")
+            e["meta"]["odds_age_days"] = 6
+            entries.append(e)
+        with tempfile.TemporaryDirectory() as d:
+            text, _ = predict.build_calibration_report(self._journal(d, entries))
+        self.assertNotIn("mérite d'être revu", text)
+        self.assertIn("l'intervalle contient 0", text)
+
+
+class TestPendingExposure(unittest.TestCase):
+    """L'exposition qui compte est celle du JOURNAL sur la semaine de matchs.
+
+    Le flux réel génère un match à la fois (`--odds` ne s'applique qu'à un match
+    unique) : un plafond limité au run courant ne plafonnerait jamais rien.
+    """
+
+    def _entry(self, match, date, stake, settled=None):
+        return {"match": match, "date": date, "competition": "E0",
+                "probs": {"home": 0.5, "draw": 0.3, "away": 0.2},
+                "predicted_score": "1-0",
+                "bets": [{"issue": "home", "odds": 2.5, "stake_pct": stake}],
+                "actual_score": settled, "actual_ht": None, "meta": {"model": "M5"}}
+
+    def _journal(self, d, entries):
+        path = Path(d) / "j.json"
+        path.write_text(json.dumps(entries))
+        return path
+
+    def test_sums_unsettled_bets_of_the_same_week(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d, [self._entry("A-B", "2026-09-19", 0.04),
+                                     self._entry("C-D", "2026-09-20", 0.03)])
+            total, n = predict.pending_exposure(path, datetime.date(2026, 9, 19))
+        self.assertAlmostEqual(total, 0.07)
+        self.assertEqual(n, 2)
+
+    def test_other_weeks_are_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d, [self._entry("A-B", "2026-09-19", 0.04),
+                                     self._entry("C-D", "2026-09-26", 0.05)])
+            total, n = predict.pending_exposure(path, datetime.date(2026, 9, 19))
+        self.assertAlmostEqual(total, 0.04)
+        self.assertEqual(n, 1)
+
+    def test_settled_bets_no_longer_expose_anything(self):
+        """Un match joué a libéré son risque : il ne bloque plus le budget."""
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d, [self._entry("A-B", "2026-09-19", 0.04, "1-0")])
+            total, n = predict.pending_exposure(path, datetime.date(2026, 9, 19))
+        self.assertEqual((total, n), (0.0, 0))
+
+    def test_entries_the_run_will_rewrite_are_excluded(self):
+        """Ré-run du même match : sa mise ne doit pas être comptée deux fois."""
+        with tempfile.TemporaryDirectory() as d:
+            path = self._journal(d, [self._entry("A-B", "2026-09-19", 0.04)])
+            total, _ = predict.pending_exposure(path, datetime.date(2026, 9, 19),
+                                                [("A-B", "2026-09-19")])
+        self.assertEqual(total, 0.0)
+
+    def test_missing_journal_is_no_exposure(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                predict.pending_exposure(Path(d) / "absent.json",
+                                         datetime.date(2026, 9, 19)),
+                (0.0, 0))
+
+    def test_prior_exposure_shrinks_the_budget(self):
+        res = {"league": "E0", "home": "H", "away": "A",
+               "date": datetime.date(2026, 9, 19),
+               "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+               "final": {"home": 0.60, "draw": 0.22, "away": 0.18},
+               "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+               "best_odds": {"home": 2.50, "draw": 3.60, "away": 4.40},
+               "grid": {(1, 0): 0.6, (1, 1): 0.4}}
+        gross = sum(predict.match_stakes(res).values())
+        summary = predict.apply_exposure_cap([res], prior=predict.SLATE_EXPOSURE_CAP - 0.001,
+                                             prior_bets=4)
+        self.assertLess(summary["factor"], 1.0)
+        self.assertAlmostEqual(summary["total"], predict.SLATE_EXPOSURE_CAP, places=9)
+        self.assertGreater(gross, summary["net"])
+
+    def test_saturated_budget_drops_the_stakes_entirely(self):
+        res = {"league": "E0", "home": "H", "away": "A",
+               "date": datetime.date(2026, 9, 19),
+               "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+               "final": {"home": 0.60, "draw": 0.22, "away": 0.18},
+               "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+               "best_odds": {"home": 2.50, "draw": 3.60, "away": 4.40},
+               "grid": {(1, 0): 0.6, (1, 1): 0.4}}
+        summary = predict.apply_exposure_cap([res], prior=predict.SLATE_EXPOSURE_CAP,
+                                             prior_bets=5)
+        self.assertEqual(summary["factor"], 0.0)
+        self.assertEqual(predict.final_stakes(res), {})
+        # aucun pari à 0 % ne doit polluer le journal (ni le ROI, ni le CLV)
+        self.assertEqual(predict.prediction_bets(res), [])
+        self.assertIn("DÉJÀ ATTEINT", predict.exposure_recap(summary))
+
+    def test_recap_reports_the_prior_commitment(self):
+        res = {"league": "E0", "home": "H", "away": "A",
+               "date": datetime.date(2026, 9, 19),
+               "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+               "final": {"home": 0.60, "draw": 0.22, "away": 0.18},
+               "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+               "best_odds": {"home": 2.50, "draw": 3.60, "away": 4.40},
+               "grid": {(1, 0): 0.6, (1, 1): 0.4}}
+        text = predict.exposure_recap(
+            predict.apply_exposure_cap([res], prior=0.02, prior_bets=1))
+        self.assertIn("Déjà engagé cette semaine", text)
+        self.assertIn("budget restant", text)

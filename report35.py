@@ -15,6 +15,7 @@ import numpy as np
 
 import backtest
 import backtest35
+import bootstrap
 import db
 import footballdata
 from report import (CALIB_MIN_N, CALIB_TOL, CLEAR_MARGIN, LABELS, METHODS,
@@ -54,9 +55,16 @@ def build_report(conn):
     over = sum(1 for c in big if c["obs"] < c["pred"] - 0.01)
     under = sum(1 for c in big if c["obs"] > c["pred"] + 0.01)
 
+    # Séries de Brier match par match : l'IC bootstrap se calcule sur elles, pas
+    # sur les moyennes déjà agrégées (cf. bootstrap.py — appariement obligatoire).
+    briers = {m: [backtest.brier(r["probs"][m], r["outcome"]) for r in rows]
+              for m in ("model", "market", "freq", "uniform")}
+    _, mkt_lo, mkt_hi = bootstrap.ci_relative_delta(briers["model"], briers["market"])
+
     checks = [
         (rel_market < 0.02,
-         f"Brier modèle à {rel_market * 100:+.2f} % du marché (critère < +2 %)"),
+         f"Brier modèle à {rel_market * 100:+.2f} % du marché "
+         f"{bootstrap.fmt_ci(mkt_lo, mkt_hi)} (critère < +2 %)"),
         (beats_freq >= CLEAR_MARGIN and beats_unif >= CLEAR_MARGIN,
          f"Bat les baselines : {beats_freq * 100:+.1f} % vs fréquences, "
          f"{beats_unif * 100:+.1f} % vs uniforme (critère ≥ {CLEAR_MARGIN * 100:.0f} % chacune)"),
@@ -76,7 +84,55 @@ def build_report(conn):
     if b_model < b_market:
         lines.append("- ⚠️ Le modèle bat le marché en Brier : traiter comme suspect, "
                      "vérifier le test anti-fuite avant toute conclusion.")
+    if mkt_hi is not None and mkt_hi >= 2.0:
+        lines.append(f"- ⚠️ Le critère « < +2 % » est validé par l'estimation "
+                     f"PONCTUELLE, mais la borne haute de l'IC 95 % la dépasse "
+                     f"({mkt_hi:+.2f} %) : sur ces {len(rows)} matchs de test, un écart "
+                     f"réel au-dessus du seuil n'est pas exclu. Ne jamais citer le "
+                     f"{rel_market * 100:+.2f} % sans son intervalle.")
     lines.append("")
+
+    # --- Incertitude autour des écarts ---
+    lines += ["## Incertitude (bootstrap apparié)", "",
+              f"Le verdict ci-dessus se joue sur un seuil ({rel_market * 100:+.2f} % "
+              f"contre un critère à +2 %) : sans intervalle, impossible de savoir si "
+              f"la marge tient à autre chose qu'au tirage des {len(rows)} matchs de "
+              f"test. Les IC ci-dessous sont des bootstraps **appariés** "
+              f"({bootstrap.DEFAULT_RESAMPLES} rééchantillonnages de matchs, graine "
+              f"{bootstrap.DEFAULT_SEED} figée pour que le rapport se régénère à "
+              f"l'identique) : modèle et référence sont notés sur les mêmes matchs, "
+              f"on rééchantillonne donc les matchs.", "",
+              fmt_row(["Comparaison", "Écart relatif", "IC 95 %", "Lecture"]),
+              fmt_row(["---"] * 4)]
+    comparisons = [("Modèle vs marché", briers["model"], briers["market"]),
+                   ("Modèle vs fréquences", briers["model"], briers["freq"]),
+                   ("Modèle vs uniforme", briers["model"], briers["uniform"])]
+    if m3_rows:
+        by_id35 = {r["match_id"]: r for r in rows}
+        paired = [(by_id35[r["match_id"]], r) for r in m3_rows if r["match_id"] in by_id35]
+        if paired:
+            comparisons.append((
+                "Modèle M3.5 vs M3",
+                [backtest.brier(a["probs"]["model"], a["outcome"]) for a, _ in paired],
+                [backtest.brier(b["probs"]["model"], b["outcome"]) for _, b in paired]))
+    for label, a, b in comparisons:
+        point, lo, hi = bootstrap.ci_relative_delta(a, b)
+        sig = bootstrap.excludes_zero(lo, hi)
+        read = ("écart distinguable du bruit" if sig
+                else "écart NON distinguable du bruit (IC contient 0)")
+        lines.append(fmt_row([label, f"{point:+.2f} %", bootstrap.fmt_ci(lo, hi), read]))
+    lines += ["", f"Lecture du premier écart, celui qui décide du verdict : le point "
+              f"est à {rel_market * 100:+.2f} % et l'intervalle "
+              f"{bootstrap.fmt_ci(mkt_lo, mkt_hi)}. "
+              + ("La borne haute reste sous le critère de +2 %, donc le verdict ne "
+                 "tient pas au hasard du tirage."
+                 if mkt_hi is not None and mkt_hi < 2.0 else
+                 "La borne haute dépasse le critère de +2 % : le verdict « sous les "
+                 "2 % » est celui de l'estimation ponctuelle, mais l'échantillon de "
+                 "test ne permet pas d'exclure un écart réel au-dessus du seuil. À "
+                 "citer avec son intervalle, jamais seul.")
+              + " Rappel de protocole : cet IC est une LECTURE du test, pas une "
+                "autorisation d'y re-régler quoi que ce soit.", ""]
 
     # --- Tableau global ---
     lines += ["## Résultats agrégés (toutes saisons de test)", "",

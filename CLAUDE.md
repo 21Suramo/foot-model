@@ -21,8 +21,10 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   conjointement sur la validation), température t = 1.077, figés dans
   `data/m35_frozen.json`. Résultat
   ([reports/m35_backtest.md](reports/m35_backtest.md)) : **4 critères sur 4**,
-  Brier à **+1,78 %** du marché. Ces fichiers figés ne doivent jamais être
-  régénérés après lecture du test.
+  Brier à **+1,78 %** du marché — IC 95 % [+1,24 ; +2,34 %] mesuré en M7, donc
+  un verdict qui tient sur l'estimation ponctuelle mais dont la borne haute
+  dépasse le critère de +2 % : citer le chiffre avec son intervalle. Ces
+  fichiers figés ne doivent jamais être régénérés après lecture du test.
 - **M5 — mise en production : implémenté.** `predict.py` sort le modèle M3.5
   figé du backtest et l'applique aux matchs à venir : refit à jour (même garde
   anti-fuite que le walk-forward), probas 1N2 recalibrées + grille de scores
@@ -94,6 +96,50 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   la composition est fournie à la main (recherche web via le skill) ; c'est
   un ajustement en aval du modèle M3.5 figé, pas un re-tuning de ses
   hyperparamètres — `data/m35_frozen.json` n'est jamais régénéré pour ça.
+- **M7 — mesurer l'edge avant de l'améliorer : implémenté.** Quatre chantiers
+  qui ne changent pas le modèle mais rendent lisible s'il a un edge réel.
+  1. **CLV réservé à une clôture sharp.** Le CLV était calculé contre
+     n'importe quel `matches.odds_source`. Contre `avg_close` (moyenne de
+     books aux marges hétérogènes) ou une ouverture (`*_open`), ce n'est plus
+     un CLV : battre une moyenne tirée par des books soft n'est pas battre le
+     marché, et comparer à une ouverture inverse souvent le signe. Seul
+     `pinnacle_close` (`CLV_SHARP_SOURCES`) est accepté ; les paris écartés
+     portent `bets[].clv_skipped` et sont comptés dans le rapport par raison
+     (`source_not_sharp` = structurel, relancer `sync-results` n'y changera
+     rien ; `no_closing_odds` = clôture absente ou saisie manuelle).
+  2. **IC bootstrap sur tous les Brier publiés** (`bootstrap.py`,
+     rééchantillonnage APPARIÉ par match, graine figée pour que les rapports
+     se régénèrent à l'identique). Résultat marquant :
+     **+1,78 % du marché → IC 95 % [+1,24 ; +2,34 %]**. La borne haute dépasse
+     le critère de +2 % : le verdict « 4 critères sur 4 » tient sur
+     l'estimation ponctuelle, pas sur l'intervalle. Ne plus jamais citer le
+     +1,78 % sans son IC. Le rapport de production publie de même un IC par
+     mois et par bucket de fraîcheur, et l'alerte « cotes périmées » exige
+     désormais que l'écart dépasse le seuil ET que son IC exclue 0 (sur
+     n ≈ 15, 3 points d'écart sortent du bruit une fois sur deux).
+  3. **De-vigging Shin** (`backtest.demargin_shin`, défaut de production,
+     `--devig {proportional,power,shin}`, journalisé dans `meta.devig`).
+     `devig_check.py` compare les trois méthodes sur les saisons HORS TEST
+     (burn-in + validation, 4 459 matchs) → `reports/devig_check.md`.
+     **Honnêteté du résultat : aucun écart de Brier n'est distinguable du
+     bruit** (IC à ±0,02 %). Shin est un choix de rigueur (marge dérivée d'un
+     modèle explicite plutôt qu'un exposant libre), PAS un gain mesuré — ne
+     jamais écrire « Shin améliore les probas ». Le contrôle montre en outre
+     que sur ces cotes le biais favori-longshot résiduel est négatif : power
+     et Shin sur-corrigent légèrement plutôt que de laisser de la marge.
+  4. **Plafond d'exposition simultanée** (`SLATE_EXPOSURE_CAP = 0.15`, soit
+     3 × le plafond individuel). Kelly plafonne chaque pari à 5 % en supposant
+     des paris séquentiels ; un week-end de 10 affiches expose 30 % en même
+     temps. Le cumul est lu dans le JOURNAL sur la même semaine de matchs
+     (lundi de référence `backtest.monday_of`, paris non réglés) — pas sur le
+     run courant : `--odds` ne s'applique qu'à un match unique, donc le flux
+     réel génère un match à la fois et un plafond « par run » n'aurait jamais
+     rien plafonné. Au-delà du budget restant, toutes les mises sont réduites
+     du MÊME facteur (jamais tronquées : tronquer reviendrait à parier sur
+     l'ordre des fixtures) ; les mises brutes restent journalisées
+     (`stake_pct_uncapped`, `exposure_factor`). Un match seul n'est jamais
+     réduit. Verrouillé, comme les autres paramètres de risque, par
+     `tests/test_predict.py::TestRiskParameters`.
 - **Fatigue/congestion (Δjours) : investigué, PAS construit.** Avant de
   lancer un chantier de calibration (tune/validation/test comme M3/M3.5), la
   roadmap demandait de vérifier que le signal existe : les équipes à ≤3 jours
@@ -129,6 +175,7 @@ python pipeline.py --update && python predict.py sync-results  # résultats rée
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
+python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -149,11 +196,28 @@ python -m unittest discover -s tests # tests unitaires
 - `pipeline.py` — CLI d'orchestration ; `check.py` — validation de la base.
 - `model.py` — Dixon-Coles : MLE pondérée (gradient analytique), shrinkage
   ridge des équipes à faible historique, grille de scores 7×7 + probas 1N2.
+  `backtest.py` expose aussi les trois démargeages (`demargin_proportional`,
+  `demargin_power`, `demargin_shin`, registre `DEMARGIN_METHODS`) ; le backtest
+  M3/M3.5 garde `power` pour sa colonne « Marché » — changer la définition du
+  marché après lecture du test reviendrait à bouger la référence a posteriori.
 - `backtest.py` — protocole walk-forward : `--tune` (fige ξ dans
   `data/xi_frozen.json`), `--run` (table `predictions`), `--shuffle-test`
   (anti-fuite). Le fichier ξ figé ne doit jamais être régénéré après le test.
 - `report.py` — Brier/log-loss vs marché démargé power et baselines,
   calibration, verdicts → `reports/m3_backtest.md`.
+- `bootstrap.py` — intervalles de confiance par bootstrap percentile, avec deux
+  règles non négociables : rééchantillonnage **apparié** (modèle et marché sont
+  notés sur les mêmes matchs, on tire des matchs — sans appariement l'IC de
+  l'écart est massivement trop large) et **graine figée** (les rapports sont
+  committés, ils doivent se régénérer à l'identique). `ci_mean`,
+  `ci_relative_delta` (écart relatif au marché), `ci_gap_relative_delta`
+  (différence entre deux écarts sur des groupes disjoints — sert à l'alerte
+  périmées vs fraîches), `fmt_ci`, `excludes_zero`.
+- `devig_check.py` — comparaison proportionnel / power / Shin sur les saisons
+  HORS TEST (choisir un démargeage est un réglage) : Brier, log-loss, biais
+  favori-longshot, calibration par tranche, IC appariés →
+  `reports/devig_check.md`. Verdict actuel : aucun écart de Brier distinguable
+  du bruit — Shin est retenu par rigueur, pas pour un gain mesuré.
 - `predict.py` — production M5. Sous-commandes `match` (prédit un match ou un
   slate `--fixture`, refit à jour sur l'historique antérieur au lundi visé,
   probas + grille au format `match_model.py`, pont marché/modèle à fraîcheur
@@ -172,15 +236,23 @@ python -m unittest discover -s tests # tests unitaires
   Récapitulatif des matchs sans cote en fin de run `match`. `--lineup-adjustment`
   (voir M6 ci-dessus) ajuste λ post-fit sur composition confirmée, journalisé
   dans `meta.lineup_adjustment`. Sous-commande
+  `--devig {proportional,power,shin}` choisit le démargeage des cotes (défaut
+  `shin`, journalisé dans `meta.devig`) ; `--exposure-cap` borne l'exposition
+  SIMULTANÉE de la semaine (défaut 15 %, cumul lu dans le journal sur le même
+  lundi de référence, mises réduites d'un facteur commun et jamais tronquées,
+  `meta.exposure_factor` + `bets[].stake_pct_uncapped`). Sous-commande
   `sync-results` : remplit `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
   après résolution d'alias, tolérance ±2 jours sur la date (report de
   calendrier) ; ce qui reste introuvable est listé « en attente de données
   source » et jamais deviné. Le rapport ajoute une section par fraîcheur des
   cotes (alerte si le bucket périmées dérive de plus de 3 points relatifs vs le
-  bucket fraîches, n ≥ 15 requis dans les deux), une section ROI théorique
+  bucket fraîches, n ≥ 15 requis dans les deux, **et IC de l'écart excluant 0** —
+  sans quoi l'alerte se déclencherait sur du bruit), une section ROI théorique
   (avertissement sous 100 paris réglés) et une section CLV (`clv_pct` par pari,
-  posé par `sync-results` depuis `matches.odds_*` — avertissement sous 20 paris
-  avec clôture connue). La colonne « Δ vs marché » des deux premières tables
+  posé par `sync-results` depuis `matches.odds_*` **uniquement si
+  `odds_source = pinnacle_close`** ; les autres sont comptés par raison de
+  refus — avertissement sous 20 paris avec clôture sharp). Chaque Δ vs marché
+  (par mois et par bucket) est publié avec son IC bootstrap apparié. La colonne « Δ vs marché » des deux premières tables
   est un écart **relatif** — même formule que « Écart rel. marché » de
   `report35.py` — donc directement comparable au +1,78 % du backtest.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
@@ -242,7 +314,8 @@ la source ne sont pas des erreurs).
   creuser la source (football-data.co.uk en retard, alias manquant).
 - **1er de chaque mois** : `python predict.py report`, committer
   reports/production_calibration.md, comparer le delta vs marché du mois
-  au chiffre du backtest (+1,78 %). Si le delta réel est significativement
+  au chiffre du backtest (+1,78 %, IC [+1,24 ; +2,34 %]) — et à son IC mensuel,
+  pas au seul point. Si le delta réel est significativement
   pire (n ≥ 15) sur plusieurs mois consécutifs, ouvrir une entrée dans ce
   fichier documentant l'écart et son investigation — ne pas re-régler les
   hyperparamètres figés sur la base du monitoring de production seul (ce

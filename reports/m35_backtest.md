@@ -4,11 +4,25 @@
 
 ## Verdict
 
-- ✅ Brier modèle à +1.78 % du marché (critère < +2 %)
+- ✅ Brier modèle à +1.78 % du marché [+1.24 ; +2.34 %] (critère < +2 %)
 - ✅ Bat les baselines : +9.5 % vs fréquences, +12.4 % vs uniforme (critère ≥ 3 % chacune)
 - ✅ Calibration : pire tranche (n ≥ 300) à 3.1 pts d'écart (tolérance 5 pts)
 - ✅ Anti-fuite : Brier dégradé sur les 3 ligues avec labels permutés
 - Rappel M3 (buts seuls, sans recalibration) : Brier 0.58781 ; M3.5 : 0.58384 (-0.67 %).
+- ⚠️ Le critère « < +2 % » est validé par l'estimation PONCTUELLE, mais la borne haute de l'IC 95 % la dépasse (+2.34 %) : sur ces 4338 matchs de test, un écart réel au-dessus du seuil n'est pas exclu. Ne jamais citer le +1.78 % sans son intervalle.
+
+## Incertitude (bootstrap apparié)
+
+Le verdict ci-dessus se joue sur un seuil (+1.78 % contre un critère à +2 %) : sans intervalle, impossible de savoir si la marge tient à autre chose qu'au tirage des 4338 matchs de test. Les IC ci-dessous sont des bootstraps **appariés** (10000 rééchantillonnages de matchs, graine 20260909 figée pour que le rapport se régénère à l'identique) : modèle et référence sont notés sur les mêmes matchs, on rééchantillonne donc les matchs.
+
+| Comparaison | Écart relatif | IC 95 % | Lecture |
+| --- | --- | --- | --- |
+| Modèle vs marché | +1.78 % | [+1.24 ; +2.34 %] | écart distinguable du bruit |
+| Modèle vs fréquences | -9.53 % | [-10.77 ; -8.30 %] | écart distinguable du bruit |
+| Modèle vs uniforme | -12.42 % | [-13.91 ; -10.93 %] | écart distinguable du bruit |
+| Modèle M3.5 vs M3 | -0.67 % | [-1.02 ; -0.33 %] | écart distinguable du bruit |
+
+Lecture du premier écart, celui qui décide du verdict : le point est à +1.78 % et l'intervalle [+1.24 ; +2.34 %]. La borne haute dépasse le critère de +2 % : le verdict « sous les 2 % » est celui de l'estimation ponctuelle, mais l'échantillon de test ne permet pas d'exclure un écart réel au-dessus du seuil. À citer avec son intervalle, jamais seul. Rappel de protocole : cet IC est une LECTURE du test, pas une autorisation d'y re-régler quoi que ce soit.
 
 ## Résultats agrégés (toutes saisons de test)
 
@@ -108,6 +122,6 @@ Température : t = 1.077, Brier validation 0.59596 → 0.59567.
 
 | Ligue | Brier réel | Brier permuté | Dégradé ? |
 | --- | --- | --- | --- |
-| E0 | 0.58638 | 0.64112 | oui |
-| SP1 | 0.58646 | 0.67220 | oui |
-| F1 | 0.58622 | 0.65241 | oui |
+| E0 | 0.58638 | 0.62196 | oui |
+| SP1 | 0.58646 | 0.66205 | oui |
+| F1 | 0.58622 | 0.66323 | oui |
