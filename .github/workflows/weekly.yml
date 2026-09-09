@@ -1,0 +1,46 @@
+name: weekly-sync
+
+on:
+  schedule:
+    # Lundi 06:00 UTC : met à jour la base et clôture les matchs de la
+    # semaine précédente avant la génération manuelle des prédictions
+    # de la semaine (routine documentée dans CLAUDE.md).
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Mettre à jour la base (football-data + Understat)
+        run: python pipeline.py --update
+
+      - name: Clôturer les résultats de la semaine précédente
+        run: python predict.py sync-results
+
+      - name: Rapport de calibration
+        run: python predict.py report
+
+      - name: Committer si le journal ou le rapport ont changé
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data/production_journal.json reports/production_calibration.md; then
+            echo "Rien à committer."
+            exit 0
+          fi
+          git add data/production_journal.json reports/production_calibration.md
+          git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
+          git push
