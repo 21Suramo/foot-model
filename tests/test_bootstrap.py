@@ -117,6 +117,35 @@ class TestCiGap(unittest.TestCase):
                          (None, None, None))
 
 
+class TestCiDiffMean(unittest.TestCase):
+    def test_point_is_difference_of_means(self):
+        a, b = [1.0] * 20, [0.4] * 20
+        point, lo, hi = bootstrap.ci_diff_mean(a, b)
+        self.assertAlmostEqual(point, 0.6, places=6)
+        self.assertAlmostEqual(lo, point, places=6)
+        self.assertAlmostEqual(hi, point, places=6)
+
+    def test_noisy_groups_with_same_mean_include_zero(self):
+        rng = np.random.default_rng(3)
+        a = rng.normal(0.0, 1.0, size=40)
+        b = rng.normal(0.0, 1.0, size=40)
+        _, lo, hi = bootstrap.ci_diff_mean(a, b)
+        self.assertFalse(bootstrap.excludes_zero(lo, hi))
+
+    def test_clearly_different_groups_exclude_zero(self):
+        rng = np.random.default_rng(3)
+        a = rng.normal(2.0, 0.2, size=200)
+        b = rng.normal(0.0, 0.2, size=200)
+        _, lo, hi = bootstrap.ci_diff_mean(a, b)
+        self.assertTrue(bootstrap.excludes_zero(lo, hi))
+
+    def test_too_small_group_has_no_interval(self):
+        self.assertEqual(bootstrap.ci_diff_mean([1.0], [0.4, 0.5, 0.6]), (0.5, None, None))
+
+    def test_empty_group_returns_none(self):
+        self.assertEqual(bootstrap.ci_diff_mean([], [1.0, 2.0]), (None, None, None))
+
+
 class TestHelpers(unittest.TestCase):
     def test_fmt_ci_and_missing_interval(self):
         self.assertEqual(bootstrap.fmt_ci(1.234, 5.678), "[+1.23 ; +5.68 %]")

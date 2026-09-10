@@ -318,13 +318,44 @@ exactement ce que la discipline du projet interdit.
   censés remplacer proprement — le document le dit lui-même (« ton M6 est
   un pansement post-hoc »), ce n'est pas un désaccord avec l'état actuel
   du projet.
-- **C1 (CLV comme signal d'entrée) : partiellement anticipé.** Le CLV
-  existant (M5.2/M7 ci-dessus) est un signal *a posteriori*, pas encore
-  un signal d'entrée qui module la mise avant le pari — exactement la
-  distinction que fait le document. Non implémenté : nécessite un
-  historique de mouvements de cote (ouverture → cote actuelle) que la
-  base actuelle (une clôture + éventuellement une ouverture par match) ne
-  capture pas assez finement ; dépend donc indirectement de A2.
+- **C1 (CLV comme signal d'entrée) : investigué, signal détecté, PAS encore
+  construit en production.** Correction d'une erreur de cette revue : le CLV
+  existant (M5.2/M7 ci-dessus) est un signal *a posteriori*, C1 en veut un
+  *a priori* — mais contrairement à ce qui a été dit initialement, ça n'a
+  PAS besoin d'une nouvelle source de cotes (A2). football-data.co.uk
+  fournit déjà ouverture ET clôture Pinnacle dans ses CSV bruts
+  (`data/raw/football-data/`, déjà exploités par `backtest_blend.py`) : de
+  quoi backtester rétroactivement le signal SANS dépenser un euro. Fait
+  suivant le protocole `fatigue_signal_check.py` (vérifier le signal AVANT
+  de construire, jamais sur le TEST) : `clv_signal_check.py`, walk-forward
+  sur 1920+VALIDATION, compare le ROI théorique des paris où le modèle voit
+  de la value à l'ouverture ET où le marché a bougé vers cette issue d'ici
+  la clôture (« convergent ») vs l'inverse (« divergent »).
+  **Résultat honnête** ([reports/clv_signal_check.md](reports/clv_signal_check.md)) :
+  signal net et significatif — ROI convergents +4,3 % vs divergents −10,7 %,
+  écart +15,0 points IC 95 % [+3,1 ; +27,0 pts] (bootstrap non apparié,
+  `bootstrap.ci_diff_mean`), n=1650/1669. Portée à noter : « edge > 0 » n'a
+  aucun seuil de marge (contrairement à la production) — mesure le signal
+  sur tout désaccord modèle/marché, pas seulement les paris qu'on aurait
+  réellement engagés ; un vrai C1 en production ajouterait ce seuil.
+  **Ce que ce résultat ne dit PAS** : que C1 complet (score composite,
+  mise modulée) doit être codé maintenant. Le protocole et la roadmap
+  elle-même l'exigent : régler un tel score sur la VALIDATION seule
+  (jamais retoucher après le TEST), et se méfier du biais de confirmation
+  qu'un signal aussi net peut créer. Investigué et documenté, pas construit
+  — ne pas confondre avec un chantier terminé.
+- **A2, correction : la version « Pinnacle clôture via football-data.co.uk
+  comme référence sharp » proposée initialement pour contourner l'absence
+  de Pinnacle chez The Odds API NE FONCTIONNE PAS comme annoncé.**
+  football-data.co.uk ne donne que la clôture (une valeur figée après coup),
+  jamais un flux temps réel : ça permet de mesurer *a posteriori* « cote
+  retail prise vs clôture sharp » (un CLV dégradé, biaisé par les mouvements
+  survenus après la prise), mais PAS « cote retail vs sharp à l'instant T »,
+  qui est la vraie définition du CLV que A2 vise. Sans un flux Pinnacle
+  temps réel (payant, ou un fournisseur alternatif dont le free tier et les
+  CGU n'ont pas été vérifiés ici), A2 ne peut pas tenir sa promesse. Reste
+  NON ATTAQUÉ, décision utilisateur (fournisseur + budget) à prendre en
+  connaissance de cause de cette limite.
 - **C2 (fractionnement books/limites) : le point d'ancrage existe déjà.**
   `--exposure-cap` (M7/M9 ci-dessus) est bien, comme le document le note
   lui-même, « le bon endroit » pour des limites par book — mais rien à y
@@ -344,12 +375,12 @@ exactement ce que la discipline du projet interdit.
   modèle joueur de B2) — rien à ensembler tant que Dixon-Coles M3.5 reste
   seul en production.
 
-Conclusion : A1 est le seul chantier de ce document qui ne dépendait ni
-d'une décision utilisateur (fournisseur de cotes, A2) ni d'un volume de
-paris/données qui n'existe pas encore (B-D) — il a donc été implémenté et
-exécuté en entier sur demande explicite. A2-D3 restent NON ATTAQUÉS, pour
-les raisons détaillées item par item ci-dessus ; rien de nouveau n'y a été
-codé, aucun hyperparamètre 1N2/M3.5 n'a été retouché.
+Conclusion : A1 est implémenté et exécuté en entier. C1 est investigué avec
+un signal détecté et documenté (`clv_signal_check.py`), mais PAS construit
+en production. A2-D3 restent NON ATTAQUÉS pour les raisons détaillées item
+par item ci-dessus (décision fournisseur, ou volume de paris/données qui
+n'existe pas encore) ; rien de nouveau n'y a été codé, aucun hyperparamètre
+1N2/M3.5 n'a été retouché.
 
 ## Commandes
 
@@ -369,6 +400,7 @@ python pipeline.py --update && python predict.py sync-results  # résultats rée
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
+python clv_signal_check.py           # roadmap C1 : le mouvement de cote est-il un signal ? -> reports/clv_signal_check.md (réponse : oui)
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
 python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
@@ -527,6 +559,20 @@ python -m unittest discover -s tests # tests unitaires
   construite (deux sources candidates testées en connectivité réelle, toutes
   deux disproportionnées pour le gain attendu) →
   `reports/m8_congestion_source_investigation.md`.
+- `clv_signal_check.py` — roadmap C1 (Phase C, à ne pas confondre avec la
+  compétition C1/C3 ci-dessus) : vérifie AVANT de construire un score
+  composite modèle+mouvement de cote si le signal existe, même discipline
+  que `fatigue_signal_check.py` (walk-forward sur 1920+VALIDATION, jamais le
+  TEST). Réutilise `backtest_blend.opening_odds_map` (CSV bruts déjà en
+  cache pour A2/M5) pour les cotes d'ouverture — zéro nouvelle source. Pour
+  chaque match, isole le pari « value » (edge modèle > 0 à l'ouverture, sans
+  seuil de marge — portée à noter), le classe convergent/divergent selon si
+  le marché a bougé vers cette issue d'ici la clôture, compare le ROI
+  théorique des deux groupes (`bootstrap.ci_diff_mean`, groupes disjoints).
+  Verdict → `reports/clv_signal_check.md`. Résultat actuel : signal net et
+  significatif (écart ROI +15,0 pts, IC [+3,1 ; +27,0 pts]) — investigué et
+  documenté, mais le score composite / la modulation de mise en production
+  n'ont PAS été construits (à régler sur la validation seule si entrepris).
 - `.github/workflows/tests.yml` — CI : sur push/PR vers `main`, installe
   `requirements.txt`, lance `python -m unittest discover -s tests` puis
   `python check.py` ; échoue si l'un des deux retourne un code non nul.

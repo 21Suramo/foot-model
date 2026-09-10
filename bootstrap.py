@@ -127,6 +127,33 @@ def ci_gap_relative_delta(scores_a, reference_a, scores_b, reference_b,
     return point, float(np.percentile(draws, lo)), float(np.percentile(draws, hi))
 
 
+def ci_diff_mean(values_a, values_b, confidence=DEFAULT_CONFIDENCE,
+                 resamples=DEFAULT_RESAMPLES, seed=DEFAULT_SEED):
+    """IC de la différence de moyenne (moyenne(a) − moyenne(b)) entre DEUX
+    groupes DISJOINTS et INDÉPENDANTS (pas de matchs communs, pas de
+    référence partagée à l'intérieur d'un groupe) — contrairement à
+    `ci_relative_delta` (séries appariées sur les mêmes matchs) et
+    `ci_gap_relative_delta` (différence entre deux écarts relatifs, chacun
+    avec sa propre référence). Sert par exemple à comparer le ROI théorique
+    de deux sous-populations de paris (ex. clv_signal_check.py : paris
+    "convergents" vs "divergents", des matchs différents dans chaque groupe).
+    Chaque groupe est rééchantillonné indépendamment.
+
+    Renvoie (point, bas, haut), point = moyenne(a) − moyenne(b)."""
+    a = np.asarray(list(values_a), dtype=float)
+    b = np.asarray(list(values_b), dtype=float)
+    if a.size == 0 or b.size == 0:
+        return None, None, None
+    point = float(a.mean() - b.mean())
+    if a.size < 2 or b.size < 2:
+        return point, None, None
+    da = a[_resample_indices(a.size, resamples, seed)].mean(axis=1)
+    db = b[_resample_indices(b.size, resamples, seed + 1)].mean(axis=1)   # tirage indépendant
+    draws = da - db
+    lo, hi = _percentiles(confidence)
+    return point, float(np.percentile(draws, lo)), float(np.percentile(draws, hi))
+
+
 def fmt_ci(lo, hi, unit="%", decimals=2):
     """« [+0,91 ; +2,64 %] » — ou une mention explicite si l'IC est indisponible."""
     if lo is None or hi is None:
