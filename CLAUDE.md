@@ -237,6 +237,86 @@ cette section désigne le nouveau chantier « M7 (roadmap) » explicitement.
   encore. La routine de suivi mensuelle/trimestrielle ci-dessous reste le
   seul mécanisme qui fait avancer ces jalons.
 
+## Roadmap « profit durable » — Phases A-D (reçue le 2026-09-10)
+
+⚠ Numérotation : ce document externe utilise une nomenclature Phase A/B/C/D
+(items A1-D3) totalement différente des « M7 (roadmap) / M8 / M9 » de la
+section précédente — deux roadmaps externes distinctes reçues à la même
+date, pas deux versions de la même chose. Cette section fait le lien entre
+les deux plutôt que de dupliquer leur contenu.
+
+Reçue et lue en entier, **volontairement non codée cette session** (le
+document lui-même est fourni « sans code » — un plan à évaluer, pas une
+liste de tickets à exécuter séance tenante). Bilan honnête item par item :
+
+- **A1 (marchés dérivés depuis la grille de scores) : déjà largement
+  couvert, mais pas à la lettre du document.** C'est exactement ce que
+  « M7 (roadmap) » a déjà implémenté et backtesté ci-dessus
+  (`backtest_derived.py`/`report_derived.py`, O/U 2,5 + BTTS, même
+  protocole tune/validation/test + IC bootstrap que M3.5). Écarts avec la
+  demande : grille encore 7×7 (`model.MAX_GOALS = 6`), pas 12×12 — les
+  queues (Over 3.5+, handicaps élevés) restent mal approximées ; seuls
+  O/U 2,5 et BTTS sont dérivés, pas la gamme complète 0,5-4,5, les
+  handicaps asiatiques (avec push), les totaux par équipe ni le top-k
+  scores exacts. Élargir la grille et le module de dérivation est
+  faisable sans dépendance externe (aucun compte/API requis) — candidat
+  naturel pour une prochaine session de code, mais pas fait ici tant que
+  le document reste au stade « à évaluer ».
+- **A2 (acquisition multi-books) : NON ATTAQUÉ, bloqué sur une décision
+  utilisateur.** Recoupe exactement le M10 « cotes programmatiques » de
+  Phase B ci-dessus (même blocage déjà documenté : choix de fournisseur,
+  compte, clé API, coût — une décision que cette session ne peut pas
+  prendre à la place de l'utilisateur). Construire une table multi-books
+  ou un module de polling sans fournisseur réel à brancher dessus serait
+  la même spéculation non demandée que celle déjà écartée pour M10.
+- **A3 (ligues secondaires) : NON ATTAQUÉ, faisable sans compte payant
+  mais lourd.** Contrairement à A2, rien n'y bloque structurellement une
+  session autonome (FBref est accessible sans clé) — mais c'est un
+  chantier de plusieurs semaines annoncé comme tel par le document lui-même
+  (normalisateur d'échelle xG Opta vs Understat par ligue, alias d'équipes
+  manuels ~20×6 ligues, colonne `league` dans `predictions`). Non lancé
+  cette session car non demandé explicitement et hors du périmètre « sans
+  code » de cette revue.
+- **B1-B4 (modèle par joueur) : NON ATTAQUÉ.** Dépend d'abord de A1/A3
+  (marchés dérivés complets, données multi-ligues) pour avoir un terrain
+  de validation cohérent. M6 (repricing H-1 sur composition confirmée,
+  section M6 ci-dessus) reste le point de départ existant que B2/B3 sont
+  censés remplacer proprement — le document le dit lui-même (« ton M6 est
+  un pansement post-hoc »), ce n'est pas un désaccord avec l'état actuel
+  du projet.
+- **C1 (CLV comme signal d'entrée) : partiellement anticipé.** Le CLV
+  existant (M5.2/M7 ci-dessus) est un signal *a posteriori*, pas encore
+  un signal d'entrée qui module la mise avant le pari — exactement la
+  distinction que fait le document. Non implémenté : nécessite un
+  historique de mouvements de cote (ouverture → cote actuelle) que la
+  base actuelle (une clôture + éventuellement une ouverture par match) ne
+  capture pas assez finement ; dépend donc indirectement de A2.
+- **C2 (fractionnement books/limites) : le point d'ancrage existe déjà.**
+  `--exposure-cap` (M7/M9 ci-dessus) est bien, comme le document le note
+  lui-même, « le bon endroit » pour des limites par book — mais rien à y
+  ajouter tant qu'il n'y a qu'un seul book (pas de cotes réelles suivies,
+  cf. A2).
+- **C3 (ROI réel vs théorique), C4 (drift/re-tuning) : NON ATTAQUÉS,
+  recoupent Gate 1/Gate 2/Phase C déjà différées ci-dessus** pour la même
+  raison : le journal de production n'a pas encore le volume de paris
+  réglés (n≥100, voire n≥500 pour C3) que ces chantiers supposent. C4
+  entre en outre en tension explicite avec la discipline du projet (ξ/w/κ
+  figés, jamais re-réglés après lecture d'un test) — un re-tuning rolling
+  ne serait envisageable qu'avec un protocole hold-out aussi strict que
+  celui de M3.5, à concevoir le jour où le volume le justifie, pas par
+  anticipation.
+- **D1-D3 (ensemble de modèles) : NON ATTAQUÉ.** Dépend de l'existence
+  d'au moins un second modèle indépendant validé (Elo, gradient boosting,
+  modèle joueur de B2) — rien à ensembler tant que Dixon-Coles M3.5 reste
+  seul en production.
+
+Conclusion de cette revue : rien de nouveau à figer dans les fichiers
+`data/*_frozen.json`, aucun re-réglage, aucun code ajouté. Le seul écart
+actionnable sans décision utilisateur ni chantier de plusieurs semaines est
+A1 (grille 12×12 + gamme complète de marchés dérivés) — à traiter dans une
+session de code dédiée si l'utilisateur le demande, pas glissé dans cette
+revue documentaire.
+
 ## Commandes
 
 ```bash
