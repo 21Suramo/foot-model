@@ -59,6 +59,18 @@ class TestPrediction(unittest.TestCase):
         self.assertAlmostEqual(grid.sum(), 1.0, places=12)
         self.assertTrue((grid >= 0).all())
 
+    def test_score_grid_default_unchanged_by_extended_grid_support(self):
+        # max_goals=None doit rester le comportement 7×7 déjà backtesté/figé
+        # (M3/M3.5) : ajouter le paramètre ne doit rien changer par défaut.
+        m = self._model(rho=-0.1)
+        self.assertTrue(np.array_equal(m.score_grid("A", "B"), m.score_grid("A", "B", max_goals=None)))
+
+    def test_score_grid_max_goals_widens_and_still_sums_to_one(self):
+        grid = self._model(rho=-0.1).score_grid("A", "B", max_goals=11)
+        self.assertEqual(grid.shape, (12, 12))
+        self.assertAlmostEqual(grid.sum(), 1.0, places=12)
+        self.assertTrue((grid >= 0).all())
+
     def test_probs_1x2_sum_to_one(self):
         h, d, a = self._model(rho=-0.1).probs_1x2("A", "B")
         self.assertAlmostEqual(h + d + a, 1.0, places=12)

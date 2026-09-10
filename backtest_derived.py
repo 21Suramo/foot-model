@@ -1,21 +1,48 @@
-"""M7 (roadmap) : validation indépendante des marchés dérivés (O/U 2,5, BTTS).
+"""Roadmap "profit durable" A1 : validation indépendante des marchés dérivés
+de la grille de score (O/U à 5 lignes, BTTS, totaux par équipe, handicap
+asiatique). Racine historique : M7 (roadmap), qui a d'abord couvert O/U 2,5
+et BTTS ; ce module a été étendu depuis à la lettre du chantier A1.
 
-Le skill vend ces deux marchés depuis le début (dérivés de la grille de score
-de predict.py : `over_prob`, `btts_prob`) sans jamais les avoir mesurés au
-même niveau de rigueur que le 1N2 — aucun tune/validation/test, aucun IC.
-Ce module comble ce trou, SANS retoucher aux hyperparamètres déjà figés du
-Dixon-Coles (w, ξ, κ dans data/m35_frozen.json) : la grille de score est celle
-du modèle M3.5 déjà validé. Seule une recalibration binaire propre à chaque
-marché (q = p^t / (p^t + (1-p)^t), symétrique de la température 1X2 de M3.5)
-est réglée sur la MÊME validation 2020-21 + 2021-22, puis figée dans
+Le skill vend ces marchés depuis le début (dérivés de la grille de score de
+predict.py) sans jamais les avoir mesurés au même niveau de rigueur que le
+1N2 — aucun tune/validation/test, aucun IC. Ce module comble ce trou, SANS
+retoucher aux hyperparamètres déjà figés du Dixon-Coles (w, ξ, κ dans
+data/m35_frozen.json) : la grille de score est celle du modèle M3.5 déjà
+validé. Seule une recalibration binaire propre à chaque marché
+(q = p^t / (p^t + (1-p)^t), symétrique de la température 1X2 de M3.5) est
+réglée sur la MÊME validation 2020-21 + 2021-22, puis figée dans
 data/derived_markets_frozen.json, puis testée sur 2022-23 → 2025-26 — même
-protocole, même interdiction de re-régler après lecture du test.
+protocole, même interdiction de re-régler après lecture du test. `tune()`
+applique cette interdiction MARCHÉ PAR MARCHÉ (fusion, jamais d'écrasement) :
+ajouter un marché ne retouche jamais la température d'un marché déjà figé et
+déjà testé.
 
-⚠ Limite honnête : football-data.co.uk ne fournit PAS de cote de marché BTTS
-(seuls 1X2, O/U 2,5 et handicap asiatique y figurent). Le critère « vs marché »
-est donc INAPPLICABLE pour BTTS tant qu'une source de cotes BTTS n'existe pas
-dans le pipeline (cf. roadmap M10, cotes programmatiques). Bat-les-baselines
-et calibration restent mesurables et mesurés pour les deux marchés.
+Grille 7×7 vs 12×12 — deux bases documentées séparément dans derived_markets.py :
+ou25/btts restent sur la grille 7×7 exacte de M3.5 (déjà backtestée et publiée
+dans reports/derived_markets_backtest.md — l'élargir changerait légèrement
+leurs probas et ferait dériver un résultat déjà lu). Les marchés ajoutés
+depuis (ou05/ou15/ou35/ou45, totaux par équipe, handicap asiatique) n'avaient
+jamais été testés avant ce chantier : ils utilisent dès leur premier tune la
+grille 12×12 (EXTENDED_MAX_GOALS), plus précise sur les queues de distribution
+— élargir la base AVANT de lire un test n'est pas le re-réglage que le
+protocole interdit.
+
+⚠ Limites honnêtes :
+- BTTS et les totaux par équipe : football-data.co.uk ne fournit AUCUNE cote
+  pour ces marchés (seuls 1X2, O/U 2,5 et handicap asiatique y figurent). Le
+  critère « vs marché » y est INAPPLICABLE (cf. roadmap M10, cotes
+  programmatiques). Bat-les-baselines et calibration restent mesurés.
+- Handicap asiatique : la ligne est propre à CHAQUE match (ah_line), pas un
+  marché à mask fixe. Les push (remboursement, possibles seulement sur ligne
+  entière — cf. derived_markets.asian_handicap_outcome) sont EXCLUS du Brier
+  (ni gagnant ni perdant, pas une observation) — model_p/market_p sont alors
+  des probabilités CONDITIONNELLES « domicile couvre sachant pas de push »,
+  seule lecture possible avec seulement 2 cotes de marché (pas de 3e cote
+  « push » chez football-data.co.uk). freq_p vaut 0,5 constant pour ce marché :
+  la ligne est choisie par le marché justement pour équilibrer les deux issues,
+  donc une fréquence historique inconditionnelle n'est pas un baseline
+  pertinent ici (le baseline uniforme déjà calculé par report_derived.py joue
+  ce rôle).
 
 Usage : python backtest_derived.py --tune | --run | --shuffle-test [--db ...]
 """
@@ -32,41 +59,85 @@ from scipy.optimize import minimize_scalar
 import backtest
 import backtest35
 import db
+import derived_markets
 import footballdata
 import model
 
 log = logging.getLogger("backtest_derived")
 
-MARKETS = ("ou25", "btts")
-MARKET_LABELS = {"ou25": "Over/Under 2,5 buts", "btts": "BTTS (les deux équipes marquent)"}
+AH_MARKET = "ah"
+MARKETS = ("ou25", "btts", "ou05", "ou15", "ou35", "ou45", "home_ov15", "away_ov15")
+ALL_MARKETS = MARKETS + (AH_MARKET,)
+MARKET_LABELS = {
+    "ou25": "Over/Under 2,5 buts",
+    "btts": "BTTS (les deux équipes marquent)",
+    "ou05": "Over/Under 0,5 but",
+    "ou15": "Over/Under 1,5 but",
+    "ou35": "Over/Under 3,5 buts",
+    "ou45": "Over/Under 4,5 buts",
+    "home_ov15": "Domicile marque plus de 1,5 but",
+    "away_ov15": "Extérieur marque plus de 1,5 but",
+    AH_MARKET: "Handicap asiatique (ligne du marché, domicile couvre)",
+}
 TEMP_BOUNDS = backtest35.TEMP_BOUNDS
 FROZEN_PATH = Path("data/derived_markets_frozen.json")
 LEAK_PATH = Path("data/leak_check_derived.json")
+EXTENDED_MAX_GOALS = derived_markets.EXTENDED_MAX_GOALS
 
 # Grilles booléennes (MAX_GOALS+1)² précalculées une fois : "over 2,5" et BTTS
 # dérivés de la MÊME grille de score que predict.py (over_prob/btts_prob) —
-# même approximation de troncature à MAX_GOALS, déjà en production.
+# même approximation de troncature à MAX_GOALS, déjà en production. INCHANGÉ
+# depuis M7 (roadmap) : ne pas toucher, déjà backtesté et publié.
 _GOALS = np.arange(model.MAX_GOALS + 1)
 _TOTAL = np.add.outer(_GOALS, _GOALS)
 _OVER25_MASK = _TOTAL > 2.5
 _BTTS_MASK = np.zeros((model.MAX_GOALS + 1, model.MAX_GOALS + 1), dtype=bool)
 _BTTS_MASK[1:, 1:] = True
-GRID_MASKS = {"ou25": _OVER25_MASK, "btts": _BTTS_MASK}
 
-# Cotes marché par match, ou None si la source n'en fournit pas (BTTS).
+# Marchés ajoutés par A1 : grille 12×12 (jamais testée avant ce chantier, cf.
+# docstring), masks construits une fois via derived_markets.py.
+GRID_MASKS = {
+    "ou25": _OVER25_MASK,
+    "btts": _BTTS_MASK,
+    "ou05": derived_markets.over_under_mask(EXTENDED_MAX_GOALS, 0.5),
+    "ou15": derived_markets.over_under_mask(EXTENDED_MAX_GOALS, 1.5),
+    "ou35": derived_markets.over_under_mask(EXTENDED_MAX_GOALS, 3.5),
+    "ou45": derived_markets.over_under_mask(EXTENDED_MAX_GOALS, 4.5),
+    "home_ov15": derived_markets.team_total_mask(EXTENDED_MAX_GOALS, "home", 1.5),
+    "away_ov15": derived_markets.team_total_mask(EXTENDED_MAX_GOALS, "away", 1.5),
+}
+
+# Quelle grille par-match (walk_forward_derived) chaque marché utilise —
+# "grid" = 7×7 legacy (ou25/btts, inchangé), "grid_ext" = 12×12 (le reste).
+MARKET_GRID_FIELD = {
+    "ou25": "grid", "btts": "grid",
+    "ou05": "grid_ext", "ou15": "grid_ext", "ou35": "grid_ext", "ou45": "grid_ext",
+    "home_ov15": "grid_ext", "away_ov15": "grid_ext",
+}
+
+# Cotes marché par match, ou None si la source n'en fournit pas (BTTS, totaux
+# par équipe — football-data.co.uk ne les cote pas).
 MARKET_ODDS = {
     "ou25": lambda r: (r["ou25_over"], r["ou25_under"]),
     "btts": lambda r: None,
+    "ou05": lambda r: None,
+    "ou15": lambda r: None,
+    "ou35": lambda r: None,
+    "ou45": lambda r: None,
+    "home_ov15": lambda r: None,
+    "away_ov15": lambda r: None,
 }
 
 
 def load_league(conn, league):
-    """Comme backtest.load_league, avec les cotes O/U 2,5 en plus : nécessaires
-    à la comparaison marché de ce module, absentes de la requête de base
-    (backtest.py n'en a jamais eu besoin pour le 1N2)."""
+    """Comme backtest.load_league, avec les cotes O/U 2,5 et handicap
+    asiatique en plus : nécessaires à la comparaison marché de ce module,
+    absentes de la requête de base (backtest.py n'en a jamais eu besoin pour
+    le 1N2)."""
     return [dict(r) for r in conn.execute(
         "SELECT match_id, date, season, home, away, fthg, ftag, "
-        "xg_home, xg_away, odds_h, odds_d, odds_a, ou25_over, ou25_under "
+        "xg_home, xg_away, odds_h, odds_d, odds_a, ou25_over, ou25_under, "
+        "ah_line, ah_home, ah_away "
         "FROM matches WHERE league = ? AND fthg IS NOT NULL ORDER BY date, match_id",
         (league,))]
 
@@ -77,7 +148,42 @@ def _market_outcome(market, fthg, ftag):
         return 1 if total > 2.5 else 0
     if market == "btts":
         return 1 if fthg > 0 and ftag > 0 else 0
+    if market == "ou05":
+        return 1 if total > 0.5 else 0
+    if market == "ou15":
+        return 1 if total > 1.5 else 0
+    if market == "ou35":
+        return 1 if total > 3.5 else 0
+    if market == "ou45":
+        return 1 if total > 4.5 else 0
+    if market == "home_ov15":
+        return 1 if fthg > 1.5 else 0
+    if market == "away_ov15":
+        return 1 if ftag > 1.5 else 0
     raise ValueError(f"marché dérivé inconnu : {market}")
+
+
+def ah_raw_prob(grid_ext, line):
+    """P(domicile couvre | pas de push) — conditionnelle, cf. docstring du
+    module : les 2 cotes de marché fournies par football-data.co.uk n'isolent
+    pas non plus la probabilité de push, donc c'est la seule quantité
+    comparable en face."""
+    p_home, p_away, _ = derived_markets.asian_handicap_probs(grid_ext, line)
+    denom = p_home + p_away
+    return p_home / denom if denom > 0 else 0.5
+
+
+def ah_home_covers(row):
+    """1 si domicile couvre, 0 si extérieur couvre, None si push ou ligne
+    absente — à exclure du Brier (un push rembourse la mise, ce n'est pas une
+    observation gagnant/perdant)."""
+    line = row.get("ah_line")
+    if line is None:
+        return None
+    outcome = derived_markets.asian_handicap_outcome(row["fthg"], row["ftag"], line)
+    if outcome == "push":
+        return None
+    return 1 if outcome == "home" else 0
 
 
 def apply_binary_temperature(p, t):
@@ -107,10 +213,14 @@ def demargin_2way(odds_pos, odds_neg):
 
 def walk_forward_derived(rows, target_seasons, cfg):
     """Refit hebdomadaire walk-forward IDENTIQUE à backtest.walk_forward, avec
-    les réglages M3.5 déjà figés (w, ξ, κ — jamais retouchés ici), mais
-    renvoie la grille de score complète (pas seulement les probas 1X2) pour
-    en dériver O/U 2,5 et BTTS, plus une baseline de fréquence walk-forward
-    (comptage strictement antérieur, jamais le futur) pour chaque marché.
+    les réglages M3.5 déjà figés (w, ξ, κ — jamais retouchés ici). Renvoie DEUX
+    grilles par match : "grid" (7×7, inchangée depuis M7 roadmap — ou25/btts)
+    et "grid_ext" (12×12, cf. derived_markets.EXTENDED_MAX_GOALS — tous les
+    marchés ajoutés depuis), plus une baseline de fréquence walk-forward
+    (comptage strictement antérieur, jamais le futur) pour chaque marché de
+    MARKETS, et "score_freq" : une grille 7×7 de fréquence de scores exacts
+    walk-forward (lissage de Laplace), baseline du diagnostic top-k de
+    report_derived.py — pas un marché coté, jamais figé/recalibré.
     """
     weeks = {}
     for r in rows:
@@ -121,6 +231,7 @@ def walk_forward_derived(rows, target_seasons, cfg):
     fitted = None
     train = []
     counts = {m: [0, 0] for m in MARKETS}   # [positifs, total]
+    score_counts = np.ones((model.MAX_GOALS + 1, model.MAX_GOALS + 1))  # lissage de Laplace
     i = 0
     for monday in sorted(weeks):
         cutoff = monday.isoformat()
@@ -129,52 +240,88 @@ def walk_forward_derived(rows, target_seasons, cfg):
             for m in MARKETS:
                 counts[m][1] += 1
                 counts[m][0] += _market_outcome(m, r["fthg"], r["ftag"])
+            hh = min(r["fthg"], model.MAX_GOALS)
+            aa = min(r["ftag"], model.MAX_GOALS)
+            score_counts[hh, aa] += 1
             train.append(r)
             i += 1
         fitted = model.fit(train, xi=cfg["xi"], ref_date=monday, warm_start=fitted,
                            xg_weight=cfg["w"], prior_weight=cfg["kappa"])
         freq = {m: (counts[m][0] / counts[m][1] if counts[m][1] else 0.5) for m in MARKETS}
+        score_freq = score_counts / score_counts.sum()
         for r in weeks[monday]:
             out.append({
                 "match_id": r["match_id"], "season": r["season"], "date": r["date"],
-                "row": r, "grid": fitted.score_grid(r["home"], r["away"]), "freq": dict(freq),
+                "row": r,
+                "grid": fitted.score_grid(r["home"], r["away"]),
+                "grid_ext": fitted.score_grid(r["home"], r["away"], max_goals=EXTENDED_MAX_GOALS),
+                "freq": dict(freq), "score_freq": score_freq,
             })
     return out
 
 
+def _raw_and_outcome_pairs(market, preds):
+    """(raw_p, outcome) par prédiction pour un marché donné, en excluant les
+    push/lignes absentes pour le handicap asiatique (pas une observation
+    gagnant/perdant)."""
+    if market == AH_MARKET:
+        pairs = []
+        for p in preds:
+            row = p["row"]
+            outcome = ah_home_covers(row)
+            if outcome is None:
+                continue
+            pairs.append((ah_raw_prob(p["grid_ext"], row["ah_line"]), outcome))
+        return pairs
+    mask = GRID_MASKS[market]
+    field = MARKET_GRID_FIELD[market]
+    return [(float(p[field][mask].sum()), _market_outcome(market, p["row"]["fthg"], p["row"]["ftag"]))
+            for p in preds]
+
+
 def tune(conn):
     """Recalibration binaire par marché, validation uniquement, figée dans
-    derived_markets_frozen.json. Ne touche jamais à data/m35_frozen.json."""
-    if FROZEN_PATH.exists():
-        frozen = json.loads(FROZEN_PATH.read_text())
-        log.warning("Réglages des marchés dérivés déjà figés (%s) — le protocole "
-                    "interdit de les re-régler. Supprimer le fichier manuellement "
-                    "pour assumer un nouveau tuning.", frozen)
-        return
+    derived_markets_frozen.json. Ne touche jamais à data/m35_frozen.json.
+
+    Fusionne avec un fichier déjà figé plutôt que de tout refuser : un marché
+    déjà présent (donc déjà testé et publié) n'est JAMAIS retouché — seuls les
+    marchés manquants sont réglés et ajoutés. C'est la même interdiction
+    « jamais re-régler après lecture du test » que la version précédente,
+    appliquée marché par marché pour permettre l'extension du chantier A1
+    sans remettre en cause ou/btts déjà publiés."""
     cfg = backtest35.frozen()
+    if FROZEN_PATH.exists():
+        result = json.loads(FROZEN_PATH.read_text())
+    else:
+        result = {"based_on_m35": {"w": cfg["w"], "xi": cfg["xi"], "kappa": cfg["kappa"]},
+                  "validation_seasons": list(backtest.VALIDATION), "markets": {}}
+    result.setdefault("markets", {})
+    already = set(result["markets"])
+    to_tune = [m for m in ALL_MARKETS if m not in already]
+    if not to_tune:
+        log.warning("Tous les marchés (%s) sont déjà figés dans %s — rien à faire. "
+                    "Supprimer une entrée manuellement pour assumer un nouveau tuning.",
+                    ", ".join(ALL_MARKETS), FROZEN_PATH)
+        return
+    if already:
+        log.info("Marchés déjà figés, non retouchés : %s", ", ".join(sorted(already)))
+
     preds = []
     for league in footballdata.LEAGUES:
         preds += walk_forward_derived(load_league(conn, league), backtest.VALIDATION, cfg)
 
-    result = {
-        "based_on_m35": {"w": cfg["w"], "xi": cfg["xi"], "kappa": cfg["kappa"]},
-        "validation_seasons": list(backtest.VALIDATION),
-        "markets": {},
-    }
-    for market in MARKETS:
-        mask = GRID_MASKS[market]
-        raw = [(float(p["grid"][mask].sum()),
-               _market_outcome(market, p["row"]["fthg"], p["row"]["ftag"]))
-               for p in preds]
+    for market in to_tune:
+        raw = _raw_and_outcome_pairs(market, preds)
         res = minimize_scalar(
             lambda t: np.mean([binary_brier(apply_binary_temperature(rp, t), o) for rp, o in raw]),
             bounds=TEMP_BOUNDS, method="bounded")
         b_raw = float(np.mean([binary_brier(rp, o) for rp, o in raw]))
         result["markets"][market] = {
             "t": float(res.x), "brier_validation_raw": b_raw, "brier_validation": float(res.fun),
+            "n_validation": len(raw),
         }
-        log.info("%s : température figée t = %.3f (Brier validation %.5f -> %.5f)",
-                 market, res.x, b_raw, res.fun)
+        log.info("%s : température figée t = %.3f (Brier validation %.5f -> %.5f, n=%d)",
+                 market, res.x, b_raw, res.fun, len(raw))
     result["tuned_at"] = datetime.date.today().isoformat()
     FROZEN_PATH.write_text(json.dumps(result, indent=2))
     log.info("Réglages figés -> %s", FROZEN_PATH)
@@ -190,32 +337,50 @@ def run(conn):
     """Backtest de test des marchés dérivés avec réglages figés -> predictions_derived."""
     cfg = backtest35.frozen()
     dcfg = frozen()
+    missing = [m for m in ALL_MARKETS if m not in dcfg.get("markets", {})]
+    if missing:
+        sys.exit(f"Marché(s) non figé(s) dans {FROZEN_PATH} : {', '.join(missing)} — "
+                 f"lancer d'abord python backtest_derived.py --tune")
     total = 0
     for league in footballdata.LEAGUES:
         rows = load_league(conn, league)
         preds = walk_forward_derived(rows, backtest.TEST, cfg)
-        for market in MARKETS:
-            mask = GRID_MASKS[market]
+        for market in ALL_MARKETS:
             t = dcfg["markets"][market]["t"]
             briers = []
+            n_pushes = 0
             for p in preds:
-                r = p["row"]
-                raw_p = float(p["grid"][mask].sum())
+                row = p["row"]
+                if market == AH_MARKET:
+                    if row.get("ah_line") is None:
+                        continue
+                    outcome = ah_home_covers(row)
+                    if outcome is None:
+                        n_pushes += 1
+                        continue
+                    raw_p = ah_raw_prob(p["grid_ext"], row["ah_line"])
+                    pair = (row["ah_home"], row["ah_away"]) \
+                        if row.get("ah_home") and row.get("ah_away") else None
+                    freq_p = 0.5
+                else:
+                    mask = GRID_MASKS[market]
+                    field = MARKET_GRID_FIELD[market]
+                    raw_p = float(p[field][mask].sum())
+                    outcome = _market_outcome(market, row["fthg"], row["ftag"])
+                    pair = MARKET_ODDS[market](row)
+                    freq_p = p["freq"][market]
+                market_p = demargin_2way(*pair)[0] if pair and pair[0] and pair[1] else None
                 model_p = apply_binary_temperature(raw_p, t)
-                outcome = _market_outcome(market, r["fthg"], r["ftag"])
-                pair = MARKET_ODDS[market](r)
-                market_p = None
-                if pair and pair[0] and pair[1]:
-                    market_p = demargin_2way(*pair)[0]
                 db.upsert_prediction_derived(conn, {
                     "match_id": p["match_id"], "market": market,
                     "model_p": model_p, "raw_p": raw_p, "market_p": market_p,
-                    "freq_p": p["freq"][market],
+                    "freq_p": freq_p,
                 })
                 briers.append(binary_brier(model_p, outcome))
             conn.commit()
-            log.info("%s %s : %d prédictions de test, Brier %.5f", league, market,
-                     len(briers), float(np.mean(briers)))
+            extra = f" ({n_pushes} push exclus)" if market == AH_MARKET else ""
+            log.info("%s %s : %d prédictions de test%s, Brier %.5f", league, market,
+                     len(briers), extra, float(np.mean(briers)) if briers else float("nan"))
             total += len(briers)
     log.info("%d prédictions écrites dans predictions_derived.", total)
 
@@ -230,13 +395,11 @@ def shuffle_test(conn, seed=42):
     def _briers(rows):
         preds = walk_forward_derived(rows, (backtest.LEAK_SEASON,), cfg)
         out = {}
-        for market in MARKETS:
-            mask = GRID_MASKS[market]
+        for market in ALL_MARKETS:
             t = dcfg["markets"][market]["t"]
-            vals = [binary_brier(apply_binary_temperature(float(p["grid"][mask].sum()), t),
-                                 _market_outcome(market, p["row"]["fthg"], p["row"]["ftag"]))
-                   for p in preds]
-            out[market] = float(np.mean(vals))
+            raw = _raw_and_outcome_pairs(market, preds)
+            vals = [binary_brier(apply_binary_temperature(rp, t), o) for rp, o in raw]
+            out[market] = float(np.mean(vals)) if vals else None
         return out
 
     for league in footballdata.LEAGUES:
@@ -249,12 +412,14 @@ def shuffle_test(conn, seed=42):
         shuf = _briers(shuffled)
         report["leagues"][league] = {
             m: {"brier_real": real[m], "brier_shuffled": shuf[m], "degraded": bool(shuf[m] > real[m])}
-            for m in MARKETS
+            for m in ALL_MARKETS if real[m] is not None and shuf[m] is not None
         }
-        for m in MARKETS:
+        for m in ALL_MARKETS:
+            if real[m] is None or shuf[m] is None:
+                continue
             log.info("%s %s : Brier réel %.5f / permuté %.5f -> %s", league, m, real[m], shuf[m],
                      "dégradé (attendu)" if shuf[m] > real[m] else "PAS DÉGRADÉ : FUITE PROBABLE")
-    report["all_degraded"] = all(v[m]["degraded"] for v in report["leagues"].values() for m in MARKETS)
+    report["all_degraded"] = all(v[m]["degraded"] for v in report["leagues"].values() for m in v)
     LEAK_PATH.write_text(json.dumps(report, indent=2))
     log.info("Résultat écrit dans %s", LEAK_PATH)
 

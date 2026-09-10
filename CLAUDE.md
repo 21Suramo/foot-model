@@ -245,23 +245,57 @@ section précédente — deux roadmaps externes distinctes reçues à la même
 date, pas deux versions de la même chose. Cette section fait le lien entre
 les deux plutôt que de dupliquer leur contenu.
 
-Reçue et lue en entier, **volontairement non codée cette session** (le
-document lui-même est fourni « sans code » — un plan à évaluer, pas une
-liste de tickets à exécuter séance tenante). Bilan honnête item par item :
+Reçue et lue en entier lors d'une première revue « sans code » (le document
+lui-même est fourni comme un plan à évaluer, pas une liste de tickets à
+exécuter séance tenante). Sur demande explicite ultérieure de coder le
+roadmap, **A1 a été implémenté et exécuté à la lettre** ; le reste (A2-D3)
+reste NON ATTAQUÉ pour les raisons ci-dessous (décisions utilisateur ou
+données qui n'existent pas encore) — coder « quand même » ces parties aurait
+produit du code mort ou de la donnée simulée présentée comme réelle,
+exactement ce que la discipline du projet interdit.
 
-- **A1 (marchés dérivés depuis la grille de scores) : déjà largement
-  couvert, mais pas à la lettre du document.** C'est exactement ce que
-  « M7 (roadmap) » a déjà implémenté et backtesté ci-dessus
-  (`backtest_derived.py`/`report_derived.py`, O/U 2,5 + BTTS, même
-  protocole tune/validation/test + IC bootstrap que M3.5). Écarts avec la
-  demande : grille encore 7×7 (`model.MAX_GOALS = 6`), pas 12×12 — les
-  queues (Over 3.5+, handicaps élevés) restent mal approximées ; seuls
-  O/U 2,5 et BTTS sont dérivés, pas la gamme complète 0,5-4,5, les
-  handicaps asiatiques (avec push), les totaux par équipe ni le top-k
-  scores exacts. Élargir la grille et le module de dérivation est
-  faisable sans dépendance externe (aucun compte/API requis) — candidat
-  naturel pour une prochaine session de code, mais pas fait ici tant que
-  le document reste au stade « à évaluer ».
+- **A1 (marchés dérivés depuis la grille de scores) : implémenté et exécuté
+  à la lettre du document.** Racine : « M7 (roadmap) » avait déjà couvert
+  O/U 2,5 + BTTS ci-dessus. Complété depuis avec le reste de la demande :
+  `derived_markets.py` (nouveau module, grille 12×12 —
+  `EXTENDED_MAX_GOALS = 11` — masques O/U à 5 lignes, totaux par équipe,
+  handicap asiatique avec push, diagnostic top-k) ; `backtest_derived.py`
+  étendu à 9 marchés (`ALL_MARKETS`) avec le même protocole tune/validation/
+  test que M3.5 ; `report_derived.py` étendu en conséquence + section top-k.
+  **La grille 12×12 ne remplace JAMAIS la grille 7×7 du 1N2/M3.5 déjà
+  publiée** : `model.score_grid` prend un paramètre `max_goals` optionnel
+  (défaut = comportement 7×7 inchangé, vérifié par test) ; ou25/btts restent
+  calculés sur la grille 7×7 exacte (résultats identiques bit à bit à avant
+  ce chantier — vérifié en régénérant `--tune`/`--run`) ; seuls les marchés
+  jamais testés avant ce chantier (ou05/15/35/45, totaux par équipe,
+  handicap asiatique) utilisent la grille 12×12 dès leur premier tune —
+  élargir la base avant de lire un test n'est pas le re-réglage interdit.
+  `backtest_derived.tune()` fusionne désormais avec un fichier déjà figé
+  (ne retouche jamais un marché déjà testé) plutôt que de tout refuser dès
+  qu'un fichier existe, pour permettre cette extension incrémentale.
+  Résultat honnête ([reports/derived_markets_backtest.md](reports/derived_markets_backtest.md),
+  régénéré sur les données réelles) : le handicap asiatique est quasiment à
+  parité avec le marché (Brier à −0,11 % [−0,64 ; +0,42 %], IC excluant
+  largement ±2 %) mais ne bat pas nettement les baselines (push exclus du
+  Brier, cf. limite ci-dessous) ; les totaux par équipe battent nettement
+  leurs baselines (+8,8 %/+6,5 % vs fréquences) mais football-data.co.uk ne
+  cote aucun de ces marchés (comparaison inapplicable, comme BTTS) ; les
+  O/U 0,5/1,5/3,5/4,5 ne battent pas leurs baselines (trop redondants avec
+  1N2/O-U 2,5 déjà connus du modèle) ; le diagnostic top-k bat sa baseline
+  de fréquence (top-3 : 33,6 % vs 30,7 %) sans être un marché coté. **Limite
+  méthodologique découverte et documentée, pas corrigée après coup** : le
+  test anti-fuite (permutation des scores) a structurellement moins de
+  prise sur un marché très déséquilibré (ou05 ≈ 94 % de base, ou45 ≈ 15 %)
+  ou sur le handicap asiatique (la permutation préserve le biais domicile
+  global que la ligne de handicap est justement fixée pour annuler) —
+  documenté marché par marché dans le rapport plutôt que masqué ; la
+  certitude anti-fuite du chantier repose sur les marchés où la dégradation
+  EST nette (ou25, btts, ou35, totaux par équipe). Câblé en production :
+  `predict.py` affiche désormais tous ces marchés calibrés (ou l'étoile `*`
+  si `--tune` n'a pas encore été relancé) et les journalise en
+  `meta.derived_markets` — informationnel seulement, le staking Kelly reste
+  1N2 uniquement (pas d'extension du système de mise à ces marchés cette
+  session).
 - **A2 (acquisition multi-books) : NON ATTAQUÉ, bloqué sur une décision
   utilisateur.** Recoupe exactement le M10 « cotes programmatiques » de
   Phase B ci-dessus (même blocage déjà documenté : choix de fournisseur,
@@ -310,12 +344,12 @@ liste de tickets à exécuter séance tenante). Bilan honnête item par item :
   modèle joueur de B2) — rien à ensembler tant que Dixon-Coles M3.5 reste
   seul en production.
 
-Conclusion de cette revue : rien de nouveau à figer dans les fichiers
-`data/*_frozen.json`, aucun re-réglage, aucun code ajouté. Le seul écart
-actionnable sans décision utilisateur ni chantier de plusieurs semaines est
-A1 (grille 12×12 + gamme complète de marchés dérivés) — à traiter dans une
-session de code dédiée si l'utilisateur le demande, pas glissé dans cette
-revue documentaire.
+Conclusion : A1 est le seul chantier de ce document qui ne dépendait ni
+d'une décision utilisateur (fournisseur de cotes, A2) ni d'un volume de
+paris/données qui n'existe pas encore (B-D) — il a donc été implémenté et
+exécuté en entier sur demande explicite. A2-D3 restent NON ATTAQUÉS, pour
+les raisons détaillées item par item ci-dessus ; rien de nouveau n'y a été
+codé, aucun hyperparamètre 1N2/M3.5 n'a été retouché.
 
 ## Commandes
 
@@ -336,7 +370,7 @@ python predict.py report             # rapport de calibration -> reports/product
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
-python backtest_derived.py --tune|--run|--shuffle-test  # M7 (roadmap) : validation O/U 2.5 + BTTS
+python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
 python -m unittest discover -s tests # tests unitaires
 ```
@@ -358,7 +392,10 @@ python -m unittest discover -s tests # tests unitaires
 - `pipeline.py` — CLI d'orchestration ; `check.py` — validation de la base.
 - `model.py` — Dixon-Coles : MLE pondérée (gradient analytique), shrinkage
   ridge des équipes à faible historique, grille de scores 7×7 + probas 1N2.
-  `backtest.py` expose aussi les trois démargeages (`demargin_proportional`,
+  `score_grid` accepte un `max_goals` optionnel (défaut = 7×7 inchangé,
+  jamais touché pour le 1N2/M3.5 déjà publiés) — sert uniquement à
+  `derived_markets.py` (grille 12×12 pour les marchés dérivés). `backtest.py`
+  expose aussi les trois démargeages (`demargin_proportional`,
   `demargin_power`, `demargin_shin`, registre `DEMARGIN_METHODS`) ; les
   backtests (M3/M3.5 et `backtest_blend.py`) gardent `power` pour leur colonne
   « Marché » — changer la définition du marché après lecture du test
@@ -383,15 +420,41 @@ python -m unittest discover -s tests # tests unitaires
   favori-longshot, calibration par tranche, IC appariés →
   `reports/devig_check.md`. Verdict actuel : aucun écart de Brier distinguable
   du bruit — Shin est retenu par rigueur, pas pour un gain mesuré.
-- `backtest_derived.py` / `report_derived.py` — M7 (roadmap) : validation
-  indépendante des marchés dérivés O/U 2,5 et BTTS, même protocole
+- `derived_markets.py` — roadmap A1 : fonctions pures grille→marché
+  (`over_under_mask`, `btts_mask`, `team_total_mask`, `asian_handicap_probs`/
+  `asian_handicap_outcome`, `topk_scores`/`topk_hit`). `EXTENDED_MAX_GOALS = 11`
+  (grille 12×12) réservée aux marchés jamais testés avant A1 — ne touche
+  jamais `model.MAX_GOALS` (7×7, 1N2/M3.5 déjà publiés). Aucune dépendance
+  sur le fit/la base : utilisé par `backtest_derived.py` (validation) et
+  `predict.py` (production).
+- `backtest_derived.py` / `report_derived.py` — roadmap A1 : validation
+  indépendante de 9 marchés dérivés (`ALL_MARKETS` : O/U à 5 lignes, BTTS,
+  totaux par équipe domicile/extérieur, handicap asiatique), même protocole
   tune/validation/test + IC bootstrap que M3.5, sans retoucher aux
-  hyperparamètres Dixon-Coles déjà figés (grille de score du modèle M3.5
-  telle quelle) — seule une recalibration binaire par marché est réglée sur
-  la validation, figée dans `data/derived_markets_frozen.json`. Écrit dans la
-  table `predictions_derived` (`db.py`) → `reports/derived_markets_backtest.md`.
-  BTTS n'a pas de cote marché dans football-data.co.uk : le critère « vs
-  marché » y est explicitement marqué inapplicable, jamais simulé.
+  hyperparamètres Dixon-Coles déjà figés. `tune()` fusionne avec un fichier
+  déjà figé (`data/derived_markets_frozen.json`, non versionné comme
+  `xi_frozen.json` — se régénère à l'identique) plutôt que de tout refuser :
+  un marché déjà présent (déjà testé et publié) n'est jamais retouché,
+  seuls les marchés manquants sont réglés et ajoutés. O/U 2,5 et BTTS
+  restent sur la grille 7×7 exacte de M3.5 (racine M7 (roadmap), résultats
+  identiques bit à bit) ; les marchés ajoutés depuis utilisent la grille
+  12×12 dès leur premier tune. L'handicap asiatique a sa propre ligne par
+  match (`matches.ah_line/ah_home/ah_away`, pas un mask fixe) ; les push
+  (remboursement, seulement sur ligne entière) sont exclus du Brier,
+  model_p/market_p sont alors des probabilités CONDITIONNELLES « domicile
+  couvre sachant pas de push ». Écrit dans `predictions_derived` (`db.py`)
+  → `reports/derived_markets_backtest.md`, avec une section top-k scores
+  exacts (diagnostic, pas un marché coté, pas de tune/validation/test).
+  BTTS et totaux par équipe n'ont pas de cote marché dans
+  football-data.co.uk : le critère « vs marché » y est explicitement
+  marqué inapplicable, jamais simulé. **Limite anti-fuite documentée, pas
+  masquée** : le test par permutation a structurellement moins de prise
+  sur un marché très déséquilibré (ou05/ou45, base réelle ≈ 94 %/15 %) ou
+  sur le handicap asiatique (la permutation préserve le biais domicile
+  global que la ligne est justement fixée pour annuler) — signalé marché
+  par marché dans le rapport (`LEAK_TEST_CAVEAT_MARKETS`), la certitude
+  anti-fuite du chantier reposant sur les marchés où la dégradation EST
+  nette (ou25, btts, ou35, totaux par équipe).
 - `predict.py` — production M5. Sous-commandes `match` (prédit un match ou un
   slate `--fixture`, refit à jour sur l'historique antérieur au lundi visé,
   probas + grille au format `match_model.py`, pont marché/modèle à fraîcheur
@@ -407,7 +470,13 @@ python -m unittest discover -s tests # tests unitaires
   `lookup_failed` / `margin_rejected`) journalisé dans `meta.no_odds_reason`
   quand aucune cote n'est fournie ; déduit à `slate_odds_ignored` si `--odds`
   est ignoré sur un `--fixture` répété, sinon `not_provided` — jamais deviné.
-  Récapitulatif des matchs sans cote en fin de run `match`. `--lineup-adjustment`
+  Récapitulatif des matchs sans cote en fin de run `match`. Affiche aussi les
+  9 marchés dérivés validés par le chantier A1 (O/U à 5 lignes, BTTS, totaux
+  par équipe — calibrés via `data/derived_markets_frozen.json`, `*` si ce
+  fichier n'a pas encore été régénéré par `backtest_derived.py --tune`),
+  journalisés dans `meta.derived_markets` — informationnel seulement, le
+  staking Kelly reste 1N2 uniquement, aucune mise sur ces marchés.
+  `--lineup-adjustment`
   (voir M6 ci-dessus) ajuste λ post-fit sur composition confirmée, journalisé
   dans `meta.lineup_adjustment`. Sous-commande
   `--devig {proportional,power,shin}` choisit le démargeage des cotes (défaut

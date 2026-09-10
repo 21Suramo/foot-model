@@ -117,10 +117,19 @@ class DixonColes:
         la_a, lb_a = self._params(away)
         return float(np.exp(la_h + lb_a + self.log_gamma)), float(np.exp(la_a + lb_h))
 
-    def score_grid(self, home, away):
-        """Grille P(score = x-y), x, y dans 0..MAX_GOALS, sommant à 1."""
+    def score_grid(self, home, away, max_goals=None):
+        """Grille P(score = x-y), x, y dans 0..max_goals, sommant à 1.
+
+        max_goals=None (par défaut) reprend le MAX_GOALS module (7×7, celui du
+        1N2 M3.5 déjà backtesté/figé — jamais changé pour ne pas faire dériver
+        des résultats déjà publiés). Un appelant qui a besoin de plus de
+        précision sur les queues de distribution (marchés dérivés — O/U hauts,
+        handicaps, cf. derived_markets.py) passe un max_goals plus grand ;
+        cela ne touche que sa propre grille, pas le calcul par défaut."""
+        if max_goals is None:
+            max_goals = MAX_GOALS
         lam_h, lam_a = self.lambdas(home, away)
-        goals = np.arange(MAX_GOALS + 1)
+        goals = np.arange(max_goals + 1)
         ph = np.exp(goals * np.log(lam_h) - lam_h - gammaln(goals + 1.0))
         pa = np.exp(goals * np.log(lam_a) - lam_a - gammaln(goals + 1.0))
         grid = np.outer(ph, pa)

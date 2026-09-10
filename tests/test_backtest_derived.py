@@ -1,6 +1,9 @@
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -25,6 +28,45 @@ class TestMarketOutcome(unittest.TestCase):
         with self.assertRaises(ValueError):
             bd._market_outcome("handicap", 1, 0)
 
+    def test_extra_over_under_lines(self):
+        self.assertEqual(bd._market_outcome("ou05", 0, 0), 0)
+        self.assertEqual(bd._market_outcome("ou05", 1, 0), 1)
+        self.assertEqual(bd._market_outcome("ou15", 1, 0), 0)
+        self.assertEqual(bd._market_outcome("ou15", 1, 1), 1)
+        self.assertEqual(bd._market_outcome("ou35", 2, 1), 0)
+        self.assertEqual(bd._market_outcome("ou35", 2, 2), 1)
+        self.assertEqual(bd._market_outcome("ou45", 2, 2), 0)
+        self.assertEqual(bd._market_outcome("ou45", 3, 2), 1)
+
+    def test_team_totals(self):
+        self.assertEqual(bd._market_outcome("home_ov15", 1, 3), 0)
+        self.assertEqual(bd._market_outcome("home_ov15", 2, 0), 1)
+        self.assertEqual(bd._market_outcome("away_ov15", 3, 1), 0)
+        self.assertEqual(bd._market_outcome("away_ov15", 0, 2), 1)
+
+
+class TestAhHomeCovers(unittest.TestCase):
+    def test_missing_line_is_none(self):
+        self.assertIsNone(bd.ah_home_covers({"ah_line": None, "fthg": 1, "ftag": 0}))
+
+    def test_push_is_none(self):
+        self.assertIsNone(bd.ah_home_covers({"ah_line": -1.0, "fthg": 1, "ftag": 0}))
+
+    def test_home_and_away_covers(self):
+        self.assertEqual(bd.ah_home_covers({"ah_line": -1.0, "fthg": 2, "ftag": 0}), 1)
+        self.assertEqual(bd.ah_home_covers({"ah_line": -1.0, "fthg": 0, "ftag": 0}), 0)
+
+
+class TestAhRawProb(unittest.TestCase):
+    def test_conditions_out_the_push_mass(self):
+        # Grille synthétique : 60 % push, 30 % domicile couvre, 10 % extérieur.
+        # Conditionnée sur "pas de push" : 30/(30+10) = 0.75.
+        grid = np.zeros((3, 3))
+        grid[1, 1] = 0.6   # marge 0, ligne 0 -> push
+        grid[2, 0] = 0.3   # marge +2 -> domicile couvre
+        grid[0, 1] = 0.1   # marge -1 -> extérieur couvre
+        self.assertAlmostEqual(bd.ah_raw_prob(grid, 0.0), 0.75, places=12)
+
 
 class TestGridMasks(unittest.TestCase):
     def test_over25_excludes_low_scoring_totals(self):
@@ -45,6 +87,14 @@ class TestGridMasks(unittest.TestCase):
         shape = (model.MAX_GOALS + 1, model.MAX_GOALS + 1)
         self.assertEqual(bd.GRID_MASKS["ou25"].shape, shape)
         self.assertEqual(bd.GRID_MASKS["btts"].shape, shape)
+
+    def test_new_markets_use_the_extended_grid_shape(self):
+        ext_shape = (bd.EXTENDED_MAX_GOALS + 1, bd.EXTENDED_MAX_GOALS + 1)
+        for market in ("ou05", "ou15", "ou35", "ou45", "home_ov15", "away_ov15"):
+            self.assertEqual(bd.GRID_MASKS[market].shape, ext_shape)
+            self.assertEqual(bd.MARKET_GRID_FIELD[market], "grid_ext")
+        self.assertEqual(bd.MARKET_GRID_FIELD["ou25"], "grid")
+        self.assertEqual(bd.MARKET_GRID_FIELD["btts"], "grid")
 
 
 class TestBinaryTemperature(unittest.TestCase):
@@ -118,6 +168,10 @@ class TestWalkForwardDerived(unittest.TestCase):
         self.assertTrue(preds)
         for p in preds:
             self.assertAlmostEqual(float(p["grid"].sum()), 1.0, places=6)
+            self.assertAlmostEqual(float(p["grid_ext"].sum()), 1.0, places=6)
+            self.assertEqual(p["grid_ext"].shape,
+                             (bd.EXTENDED_MAX_GOALS + 1, bd.EXTENDED_MAX_GOALS + 1))
+            self.assertAlmostEqual(float(p["score_freq"].sum()), 1.0, places=6)
             for market in bd.MARKETS:
                 self.assertTrue(0.0 <= p["freq"][market] <= 1.0)
 
@@ -128,6 +182,73 @@ class TestWalkForwardDerived(unittest.TestCase):
         cfg = {"xi": 0.0, "w": 0.0, "kappa": 2.0}
         preds = bd.walk_forward_derived(rows, ("1920",), cfg)
         self.assertTrue(all("grid" in p for p in preds))
+
+
+class TestTuneMergesRatherThanOverwrites(unittest.TestCase):
+    """tune() ne doit jamais retoucher un marché déjà figé (déjà testé et
+    publié) même quand de nouveaux marchés sont ajoutés au chantier A1."""
+
+    def _fake_preds(self, n=30):
+        rng = np.random.default_rng(0)
+        ext_n = bd.EXTENDED_MAX_GOALS + 1
+        preds = []
+        for i in range(n):
+            grid = rng.dirichlet(np.ones(49)).reshape(7, 7)
+            grid_ext = rng.dirichlet(np.ones(ext_n * ext_n)).reshape(ext_n, ext_n)
+            row = {"fthg": i % 3, "ftag": (i + 1) % 4, "ah_line": -0.5}
+            preds.append({"row": row, "grid": grid, "grid_ext": grid_ext})
+        return preds
+
+    def test_adding_markets_does_not_retune_existing_ones(self):
+        with tempfile.TemporaryDirectory() as d:
+            frozen_path = Path(d) / "derived_markets_frozen.json"
+            pre = {
+                "based_on_m35": {"w": 0.6, "xi": 0.003, "kappa": 1.0},
+                "validation_seasons": ["2021", "2122"],
+                "markets": {"ou25": {"t": 1.234, "brier_validation_raw": 0.2,
+                                     "brier_validation": 0.19}},
+                "tuned_at": "2020-01-01",
+            }
+            frozen_path.write_text(json.dumps(pre))
+
+            with mock.patch.object(bd, "FROZEN_PATH", frozen_path), \
+                 mock.patch.object(bd.footballdata, "LEAGUES", ["E0"]), \
+                 mock.patch.object(bd.backtest35, "frozen",
+                                   return_value={"w": 0.6, "xi": 0.003, "kappa": 1.0}), \
+                 mock.patch.object(bd, "walk_forward_derived", return_value=self._fake_preds()), \
+                 mock.patch.object(bd, "load_league", return_value=[]):
+                bd.tune(conn=None)
+
+            result = json.loads(frozen_path.read_text())
+            self.assertEqual(result["markets"]["ou25"], pre["markets"]["ou25"])
+            for market in bd.ALL_MARKETS:
+                self.assertIn(market, result["markets"])
+
+    def test_nothing_left_to_tune_is_a_noop(self):
+        with tempfile.TemporaryDirectory() as d:
+            frozen_path = Path(d) / "derived_markets_frozen.json"
+            pre = {"based_on_m35": {}, "validation_seasons": [],
+                  "markets": {m: {"t": 1.0, "brier_validation_raw": 0.0, "brier_validation": 0.0}
+                              for m in bd.ALL_MARKETS},
+                  "tuned_at": "2020-01-01"}
+            frozen_path.write_text(json.dumps(pre))
+            with mock.patch.object(bd, "FROZEN_PATH", frozen_path), \
+                 mock.patch.object(bd.backtest35, "frozen",
+                                   return_value={"w": 0.6, "xi": 0.003, "kappa": 1.0}):
+                bd.tune(conn=None)
+            self.assertEqual(json.loads(frozen_path.read_text()), pre)
+
+
+class TestRunRequiresAllMarketsFrozen(unittest.TestCase):
+    def test_missing_market_exits(self):
+        with tempfile.TemporaryDirectory() as d:
+            frozen_path = Path(d) / "derived_markets_frozen.json"
+            frozen_path.write_text(json.dumps({"markets": {"ou25": {"t": 1.0}}}))
+            with mock.patch.object(bd, "FROZEN_PATH", frozen_path), \
+                 mock.patch.object(bd.backtest35, "frozen",
+                                   return_value={"w": 0.6, "xi": 0.003, "kappa": 1.0}):
+                with self.assertRaises(SystemExit):
+                    bd.run(conn=None)
 
 
 if __name__ == "__main__":

@@ -51,8 +51,10 @@ import numpy as np
 
 import backtest
 import backtest35
+import backtest_derived
 import bootstrap
 import db
+import derived_markets
 import footballdata
 import model
 
@@ -312,16 +314,16 @@ def apply_lineup_adjustment(lam_h, lam_a, rho, adjustment):
     return new_lam_h, new_lam_a, meta
 
 
-def grid_and_probs_from_lambdas(lam_h, lam_a, rho):
+def grid_and_probs_from_lambdas(lam_h, lam_a, rho, max_goals=None):
     """Grille de scores + probas 1N2 pour des λ arbitraires (post-ajustement).
 
     Réutilise model.DixonColes tel quel (jamais modifié) via une instance à
     deux équipes fictives dont les log-forces d'attaque encodent directement
     log(λ_h)/log(λ_a) (défenses et gamma neutres, log=0) : même calcul de la
     correction tau/rho que le fit normal, sans dupliquer la logique de
-    model.py dans predict.py."""
+    model.py dans predict.py. max_goals suit model.score_grid (None = 7×7)."""
     mini = model.DixonColes(["_h", "_a"], np.log([lam_h, lam_a]), np.log([1.0, 1.0]), 0.0, rho)
-    grid = mini.score_grid("_h", "_a")
+    grid = mini.score_grid("_h", "_a", max_goals=max_goals)
     return grid, mini.probs_1x2("_h", "_a")
 
 
@@ -631,6 +633,50 @@ def btts_prob(grid):
     return sum(p for (h, a), p in grid.items() if h > 0 and a > 0)
 
 
+def team_over_prob(grid, side, line):
+    idx = 0 if side == "home" else 1
+    return sum(p for score, p in grid.items() if score[idx] > line)
+
+
+_DERIVED_CFG_CACHE = None
+
+
+def derived_markets_cfg():
+    """data/derived_markets_frozen.json (roadmap A1), en cache — absent tant que
+    personne n'a lancé `backtest_derived.py --tune` : predict.py doit rester
+    utilisable sans (affiche alors les probas brutes, non calibrées, avec une
+    note), pas un sys.exit comme backtest_derived.frozen()."""
+    global _DERIVED_CFG_CACHE
+    if _DERIVED_CFG_CACHE is None:
+        _DERIVED_CFG_CACHE = (json.loads(backtest_derived.FROZEN_PATH.read_text())
+                              if backtest_derived.FROZEN_PATH.exists() else {})
+    return _DERIVED_CFG_CACHE
+
+
+def calibrated_derived_prob(market, raw_p):
+    """Proba calibrée si backtest_derived.py --tune a figé ce marché, sinon la
+    proba brute (non calibrée — signalé par le "*" en affichage)."""
+    t = derived_markets_cfg().get("markets", {}).get(market, {}).get("t")
+    return (backtest_derived.apply_binary_temperature(raw_p, t), True) if t is not None \
+        else (raw_p, False)
+
+
+def derived_markets_probs(grid, grid_ext):
+    """Toutes les probas de marchés dérivés validées par le chantier A1
+    (backtest_derived.py/reports/derived_markets_backtest.md), calibrées si
+    figées. ou25/btts restent sur `grid` (7×7, base inchangée depuis M7
+    roadmap) ; le reste sur `grid_ext` (12×12, cf. derived_markets.py) —
+    jamais mélangés, cf. backtest_derived.py pour pourquoi."""
+    raw = {
+        "ou05": over_prob(grid_ext, 0.5), "ou15": over_prob(grid_ext, 1.5),
+        "ou25": over_prob(grid, 2.5), "ou35": over_prob(grid_ext, 3.5),
+        "ou45": over_prob(grid_ext, 4.5), "btts": btts_prob(grid),
+        "home_ov15": team_over_prob(grid_ext, "home", 1.5),
+        "away_ov15": team_over_prob(grid_ext, "away", 1.5),
+    }
+    return {m: calibrated_derived_prob(m, p) for m, p in raw.items()}
+
+
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
                   odds_specs, odds_age_days, blend, fit_cache,
                   no_odds_reason=None, lineup_adjustment=None,
@@ -661,6 +707,14 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         grid = grid_to_dict(fitted.score_grid(home, away))
         raw = fitted.probs_1x2(home, away)
     model_probs = dict(zip(ISSUES, backtest35.apply_temperature(raw, cfg["temperature"])))
+
+    # Grille 12×12 (roadmap A1) : mêmes λ/rho (ajustés composition compris) que
+    # ci-dessus, juste moins tronquée — cf. derived_markets.py pour pourquoi
+    # elle ne remplace jamais la grille 7×7 du 1N2/ou25/btts.
+    grid_ext_arr, _ = grid_and_probs_from_lambdas(lam_h, lam_a, fitted.rho,
+                                                  max_goals=derived_markets.EXTENDED_MAX_GOALS)
+    grid_ext = grid_to_dict(grid_ext_arr)
+    derived = derived_markets_probs(grid, grid_ext)
 
     market = best_odds = None
     m_weight = 0.0
@@ -696,6 +750,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "odds_age_days": odds_age_days, "no_odds_reason": reason,
         "devig": devig if market is not None else None,
         "lineup_adjustment": lineup_meta,
+        "derived_markets": derived,
     }
 
 
@@ -744,7 +799,23 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
 
     grid = res["grid"]
     print()
-    print(f"BTTS : {fmt(btts_prob(grid))}   |   Over 2.5 : {fmt(over_prob(grid, 2.5))}")
+    dm = res.get("derived_markets", {})
+
+    def _fmt_dm(key):
+        if key not in dm:
+            return "n/d"
+        p, calibrated = dm[key]
+        return fmt(p) + ("" if calibrated else "*")
+
+    print(f"BTTS : {_fmt_dm('btts')}   |   Over 0.5 : {_fmt_dm('ou05')}   |   "
+          f"Over 1.5 : {_fmt_dm('ou15')}")
+    print(f"Over 2.5 : {_fmt_dm('ou25')}   |   Over 3.5 : {_fmt_dm('ou35')}   |   "
+          f"Over 4.5 : {_fmt_dm('ou45')}")
+    print(f"{home} +1,5 but(s) : {_fmt_dm('home_ov15')}   |   "
+          f"{away} +1,5 but(s) : {_fmt_dm('away_ov15')}")
+    if dm and not all(calibrated for _, calibrated in dm.values()):
+        print("(* non calibré — lancer `python backtest_derived.py --tune` puis `--run` "
+              "pour figer/valider ce marché, cf. reports/derived_markets_backtest.md)")
     print(f"Double chance 1X : {fmt(final['home'] + final['draw'])}   |   "
           f"X2 : {fmt(final['away'] + final['draw'])}")
 
@@ -933,7 +1004,12 @@ def log_prediction(path, res, no_stake=False):
                  "exposure_factor": round(res.get("exposure_factor", 1.0), 6),
                  "correlated_exposure": res.get("correlated", False),
                  "no_odds_reason": res.get("no_odds_reason"),
-                 "lineup_adjustment": res.get("lineup_adjustment") or {"applied": False}},
+                 "lineup_adjustment": res.get("lineup_adjustment") or {"applied": False},
+                 # Informationnel (roadmap A1) : probas calibrées si figées
+                 # (backtest_derived.py --tune), sinon brutes (calibrated=False).
+                 # N'alimente PAS bets/stakes — le staking reste 1N2 uniquement.
+                 "derived_markets": {m: {"p": round(p, 4), "calibrated": calibrated}
+                                     for m, (p, calibrated) in res.get("derived_markets", {}).items()}},
     }
     for i, e in enumerate(entries):
         if e["match"] == match and e["date"] == date_iso and e.get("actual_score") is None:
