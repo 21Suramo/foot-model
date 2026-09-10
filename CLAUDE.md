@@ -369,16 +369,41 @@ exactement ce que la discipline du projet interdit.
   en conditions réelles : 3699 lignes capturées sur les 3 ligues (books
   retail + Pinnacle), déjà committées dans `data/football.db`.
 
-  **PAS fait** (le reste de la demande originale d'A2) : pas de cadence de
-  capture automatisée (le script existe, rien ne le déclenche à intervalle
-  régulier — câbler ça dans `.github/workflows/weekly.yml` suppose que
-  l'utilisateur ajoute `ODDS_API_KEY` comme secret du dépôt, une décision
-  qui lui revient, pas prise ici) ; pas de résolution d'alias entre les noms
-  d'équipe de l'API et ceux de football-data.co.uk (nécessaire pour croiser
-  book_odds avec les résultats/le modèle — les noms EPL/La Liga/Ligue 1
-  semblent déjà proches mais pas vérifiés systématiquement) ; `predict.py`
-  n'utilise pas encore ces cotes (l'entrée `--odds` reste manuelle). Ne pas
-  présenter A2 comme terminé sur la base de cette seule capture.
+  **Résolution d'alias API ↔ football-data.co.uk : faite.** Comparaison
+  réelle des 58 noms d'équipe renvoyés par l'API aux noms `matches`
+  (E0/SP1/F1, saisons 2526+2627) : 27 ne correspondaient pas telle quelle
+  (l'API utilise des noms complets/officiels — « Manchester United »,
+  « Atlético Madrid » — que football-data.co.uk abrège — « Man United »,
+  « Ath Madrid »). Les 27 alias ajoutés à `aliases.py` (même table
+  `team_aliases` que pour Understat, un seul namespace) ; `odds_snapshot.py`
+  résout désormais chaque nom AVANT insertion (`db.load_aliases` +
+  `_known_teams` par ligue), donc `book_odds` est directement joignable à
+  `matches` sur (league, home, away) sans étape différée. Les 2475 lignes du
+  snapshot déjà capturé ont été corrigées rétroactivement en base (UPDATE
+  ciblé, sans consommer de nouveaux crédits API) : 0 nom non résolu restant.
+
+  **Budget de crédits — calcul honnête AVANT toute automatisation.** Coût =
+  1 crédit × (ligues × régions × marchés). Défaut (3 ligues, `regions=eu`,
+  `markets=h2h`) = 3 crédits/snapshot ; avec `totals` en plus = 6. Quota
+  gratuit 500/mois → **~5,5 snapshots/jour soutenables en h2h seul, ~2,7 en
+  h2h+totals**. Une cadence « toutes les 6h » (4/jour), le minimum pour un
+  CLV sérieux selon la roadmap elle-même, coûte 720 à 1440 crédits/mois —
+  AU-DESSUS du quota gratuit. **Le free tier valide que le pipeline
+  fonctionne, il ne permet pas de mesurer un edge en conditions réelles.**
+  Documenté en tête de `odds_snapshot.py` : ne rien construire qui suppose
+  une cadence > ~2/jour sans être passé au tier payant (30 €/mois pour
+  20 000 crédits au moment de la vérification, 2026-09-10).
+
+  **PAS fait** (le reste de la demande originale d'A2, deux pièces
+  restantes, ni bloquantes ni faites) : pas de cadence de capture
+  automatisée (le script existe, rien ne le déclenche à intervalle régulier
+  — câbler ça dans `.github/workflows/` suppose que l'utilisateur ajoute
+  `ODDS_API_KEY` comme secret du dépôt ET choisisse une cadence dans le
+  budget ci-dessus, une décision qui lui revient) ; `predict.py` n'utilise
+  pas encore ces cotes (l'entrée `--odds` reste manuelle — dernière étape,
+  vient après que la capture + l'historique existent). Ne pas présenter A2
+  comme terminé : la coquille + son contenu (alias) sont là, l'automatisation
+  et l'intégration production ne le sont pas.
 - **C2 (fractionnement books/limites) : le point d'ancrage existe déjà.**
   `--exposure-cap` (M7/M9 ci-dessus) est bien, comme le document le note
   lui-même, « le bon endroit » pour des limites par book — mais rien à y
@@ -445,14 +470,16 @@ python -m unittest discover -s tests # tests unitaires
   (variable d'environnement, jamais committée — cf. Conventions).
   Couverture vérifiée par appel réel le 2026-09-10 (pas une source web) :
   `regions=eu` seul couvre Pinnacle ET plusieurs books retail pertinents
-  (`winamax_fr`, `betclic_fr`, `pmu_fr`) sur E0/SP1/F1, à 1 crédit par
-  (ligue × région × marché) — 3 crédits pour un snapshot h2h des 3 ligues
-  (défaut), quota gratuit 500 crédits/mois. `odds_snapshot.py` ne planifie
-  rien lui-même (pas de cron intégré) : à lancer à la main, ou câblé dans
-  `.github/workflows/weekly.yml` si l'utilisateur ajoute `ODDS_API_KEY`
-  comme secret du dépôt. Les noms d'équipe stockés sont ceux de l'API,
-  PAS encore résolus via `team_aliases` vers la convention football-data.co.uk
-  — à faire avant de croiser `book_odds` avec `matches`/le modèle.
+  (`winamax_fr`, `betclic_fr`, `pmu_fr`) sur E0/SP1/F1. Coût : 1 crédit par
+  (ligue × région × marché) — budget détaillé (soutenable ~2-5/jour selon
+  les marchés, PAS une cadence 6h/CLV réel) dans la docstring de
+  `odds_snapshot.py`, à relire avant toute automatisation. `odds_snapshot.py`
+  résout chaque nom d'équipe via `team_aliases` (`resolve`/`_known_teams`)
+  AVANT d'insérer dans `book_odds` : la table est donc directement joignable
+  à `matches` sur (league, home, away), pas de résolution différée à écrire
+  ailleurs. Ne planifie rien lui-même (pas de cron intégré) : à lancer à la
+  main, ou câblé dans `.github/workflows/` si l'utilisateur ajoute
+  `ODDS_API_KEY` comme secret du dépôt ET choisit une cadence dans le budget.
 - `footballdata.py` — CSV football-data.co.uk avec cache dans
   `data/raw/football-data/` ; priorité cotes de clôture Pinnacle, repli
   moyenne du marché, puis ouverture (saison 2018-19, colonne `odds_source`).
@@ -461,7 +488,10 @@ python -m unittest discover -s tests # tests unitaires
 - `understat.py` — xG Understat, cache dans `data/raw/understat/`.
 - `xgjoin.py` — jointure xG sur (date, home, away) après résolution
   d'alias, tolérance ±2 jours.
-- `aliases.py` — seed de `team_aliases` (nom Understat → nom football-data).
+- `aliases.py` — seed de `team_aliases` (nom Understat OU The Odds API →
+  nom football-data, un seul namespace). Les alias A2 (27 entrées, EPL/Liga/
+  Ligue 1) ont été trouvés par comparaison réelle des noms API aux noms
+  `matches`, pas devinés — cf. section roadmap A2 ci-dessus.
 - `pipeline.py` — CLI d'orchestration ; `check.py` — validation de la base.
 - `model.py` — Dixon-Coles : MLE pondérée (gradient analytique), shrinkage
   ridge des équipes à faible historique, grille de scores 7×7 + probas 1N2.

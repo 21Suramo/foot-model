@@ -67,8 +67,10 @@ CREATE TABLE IF NOT EXISTS book_odds (
                                     -- TEMPORELLE (roadmap A2), jamais un upsert qui écrase
     league        TEXT NOT NULL,   -- E0 / SP1 / F1 (convention interne, pas le sport_key API)
     commence_time TEXT NOT NULL,   -- coup d'envoi (ISO UTC, tel que renvoyé par l'API)
-    home          TEXT NOT NULL,   -- nom d'équipe TEL QUE RENVOYÉ PAR L'API, pas encore
-    away          TEXT NOT NULL,   -- résolu par team_aliases (source différente de football-data)
+    home          TEXT NOT NULL,   -- nom CANONIQUE football-data (résolu via team_aliases
+    away          TEXT NOT NULL,   -- par l'appelant, ex. odds_snapshot.py — pas par insert_book_odds
+                                    -- lui-même, qui n'impose aucune résolution) : directement
+                                    -- joignable à matches sur (league, home, away)
     book          TEXT NOT NULL,   -- clé bookmaker de l'API (ex. 'pinnacle', 'winamax_fr')
     market        TEXT NOT NULL,   -- 'h2h' | 'totals'
     outcome       TEXT NOT NULL,   -- h2h : 'home'/'draw'/'away' ; totals : 'Over'/'Under'
