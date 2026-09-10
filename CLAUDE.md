@@ -157,6 +157,86 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
   nouvelle (davantage de saisons) ; ne pas le confondre avec un simple oubli
   à rattraper.
 
+## Roadmap post-M7 (revue du 2026-09-10)
+
+⚠ Numérotation : la roadmap externe qui a motivé cette section réutilise le
+nom « M7 » pour un chantier différent du M7 déjà documenté plus haut (CLV
+sharp/bootstrap/Shin/plafond d'exposition). Pour éviter toute confusion,
+cette section désigne le nouveau chantier « M7 (roadmap) » explicitement.
+
+- **M7 (roadmap) — Validation indépendante des marchés dérivés (O/U 2,5,
+  BTTS) : implémenté et exécuté.** Le skill vendait ces deux marchés depuis
+  le début (grille de score de `predict.py`) sans jamais les avoir mesurés
+  au niveau de rigueur du 1N2. `backtest_derived.py` applique le MÊME
+  protocole que M3.5 (tune/validation/test, IC bootstrap apparié), SANS
+  retoucher aux hyperparamètres Dixon-Coles déjà figés (w/ξ/κ de
+  `data/m35_frozen.json`) : seule une recalibration binaire propre à chaque
+  marché (q = p^t/(p^t+(1-p)^t)) est réglée sur la même validation, figée
+  dans `data/derived_markets_frozen.json`. Résultat honnête
+  ([reports/derived_markets_backtest.md](reports/derived_markets_backtest.md)) :
+  - O/U 2,5 : Brier modèle à +1,81 % du marché IC 95 % [+1,16 ; +2,56 %]
+    (démargeage proportionnel à 2 issues — critère < +2 % validé sur le
+    point, borne haute au-dessus, même lecture prudente que M3.5) ; calibration
+    et anti-fuite OK ; **ne bat PAS nettement les baselines** (+2,5 % vs
+    fréquences, +3,2 % vs uniforme, sous le seuil de 3 % chacune).
+  - BTTS : comparaison au marché **inapplicable** — football-data.co.uk ne
+    fournit aucune cote BTTS (seuls 1X2, O/U 2,5, handicap asiatique) ; pas de
+    critère fabriqué en son absence. Calibration et anti-fuite OK, mais bat
+    encore moins les baselines que l'O/U (+0,8 % / +1,4 %).
+  - Lecture honnête : ces deux marchés dérivés sont mesurablement plus
+    faibles que le 1N2 M3.5. Ne pas les présenter avec la même confiance que
+    le 1N2 tant que ce verdict tient.
+  - BTTS a de plus une température figée sur le BORD de `TEMP_BOUNDS`
+    (t = 0,500, borne basse) : l'aplatissement optimal est peut-être plus
+    fort que la plage actuelle ne le permet — signalé dans le rapport,
+    volontairement pas corrigé après coup (élargir la plage après avoir vu
+    où l'optimiseur bute serait re-régler sur le test).
+- **M8 (roadmap) — Correction de la feature fatigue : investigué, PAS
+  construit** ([reports/m8_congestion_source_investigation.md](reports/m8_congestion_source_investigation.md)).
+  Deux sources candidates pour les dates de coupe/C1/C3 testées en
+  connectivité réelle : football-data.org (métadonnées accessibles sans
+  clé, mais les endpoints de matchs exigent un compte/`X-Auth-Token` — une
+  inscription qu'un humain doit faire, pas une session autonome) et le
+  scraping de pages Wikipédia de saison (sans identifiants, mais un chantier
+  de parsing long et fragile sur 3 ligues × 9 saisons × plusieurs
+  compétitions). Le sous-échantillon « repos court » déjà mesuré par
+  `fatigue_signal_check.py` (~250/13 242 matchs, |z| < 1) rend le gain de
+  puissance statistique attendu modeste face au coût des deux options. À
+  reprendre si l'utilisateur fournit une clé API dédiée, ou quand
+  davantage de saisons auront accumulé.
+- **M9 (roadmap) — Corrélation réelle dans le plafond d'exposition :
+  implémenté.** `SLATE_EXPOSURE_CAP` (predict.py) traitait chaque match comme
+  un tirage indépendant. `CORRELATED_EXPOSURE_MULTIPLIER = 1.5` (verrouillé
+  par `TestRiskParameters`, même statut que les autres paramètres de risque)
+  détecte les paris sur des matchs de la MÊME semaine partageant une équipe
+  (report de calendrier, double confrontation) et les compte ×1,5 dans la
+  comptabilité interne du plafond — jamais dans les mises réellement posées,
+  toujours réduites par le même facteur commun documenté depuis M7. C'est
+  une heuristique non calibrée (aucune donnée de paris multi-matchs corrélés
+  n'existe pour l'estimer), au même titre que la division par 2 sur marge
+  aberrante de `market_weight` — assumé et documenté comme tel, pas présenté
+  comme un chiffre mesuré. `pending_bet_matches` (predict.py) étend la
+  détection aux paris déjà engagés dans le journal la même semaine.
+- **Phase B (M10 cotes programmatiques, M11 automatisation compos) : NON
+  ATTAQUÉE.** Les deux dépendent d'une décision que cette session ne peut pas
+  prendre à la place de l'utilisateur : quel fournisseur de cotes/actus
+  (compte à créer, clé API, coût éventuel, conditions d'utilisation). Écrire
+  une couche d'abstraction sans fournisseur réel à brancher dessus serait de
+  la spéculation non demandée (contraire à la discipline du projet : pas de
+  code à moitié fini, pas d'abstraction sans besoin concret). À lancer une
+  fois le choix de fournisseur fait explicitement par l'utilisateur.
+- **Gate 1 (n=50 CLV, ~fin octobre 2026), Phase C (palier d'attente jusqu'à
+  n=100), Gate 2 (n=100, ~mi-février 2027) et Phases D/E/F : NON ATTAQUÉES,
+  délibérément.** Ces jalons dépendent d'un volume de paris théoriques réels
+  qui n'existe pas encore à la date de cette revue (2026-09-10) — le journal
+  de production se remplit un match à la semaine via la routine hebdomadaire
+  ci-dessous, pas en une session. Les fabriquer maintenant (avancer le
+  calendrier, gonfler artificiellement le journal, ou construire M12-M19 par
+  anticipation) reviendrait très exactement à ce que ce fichier interdit
+  ailleurs : re-régler ou décider sur la base d'un signal qui n'existe pas
+  encore. La routine de suivi mensuelle/trimestrielle ci-dessous reste le
+  seul mécanisme qui fait avancer ces jalons.
+
 ## Commandes
 
 ```bash
@@ -176,6 +256,8 @@ python predict.py report             # rapport de calibration -> reports/product
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
+python backtest_derived.py --tune|--run|--shuffle-test  # M7 (roadmap) : validation O/U 2.5 + BTTS
+python report_derived.py             # rapport -> reports/derived_markets_backtest.md
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -221,6 +303,15 @@ python -m unittest discover -s tests # tests unitaires
   favori-longshot, calibration par tranche, IC appariés →
   `reports/devig_check.md`. Verdict actuel : aucun écart de Brier distinguable
   du bruit — Shin est retenu par rigueur, pas pour un gain mesuré.
+- `backtest_derived.py` / `report_derived.py` — M7 (roadmap) : validation
+  indépendante des marchés dérivés O/U 2,5 et BTTS, même protocole
+  tune/validation/test + IC bootstrap que M3.5, sans retoucher aux
+  hyperparamètres Dixon-Coles déjà figés (grille de score du modèle M3.5
+  telle quelle) — seule une recalibration binaire par marché est réglée sur
+  la validation, figée dans `data/derived_markets_frozen.json`. Écrit dans la
+  table `predictions_derived` (`db.py`) → `reports/derived_markets_backtest.md`.
+  BTTS n'a pas de cote marché dans football-data.co.uk : le critère « vs
+  marché » y est explicitement marqué inapplicable, jamais simulé.
 - `predict.py` — production M5. Sous-commandes `match` (prédit un match ou un
   slate `--fixture`, refit à jour sur l'historique antérieur au lundi visé,
   probas + grille au format `match_model.py`, pont marché/modèle à fraîcheur
@@ -243,7 +334,13 @@ python -m unittest discover -s tests # tests unitaires
   `shin`, journalisé dans `meta.devig`) ; `--exposure-cap` borne l'exposition
   SIMULTANÉE de la semaine (défaut 15 %, cumul lu dans le journal sur le même
   lundi de référence, mises réduites d'un facteur commun et jamais tronquées,
-  `meta.exposure_factor` + `bets[].stake_pct_uncapped`). Sous-commande
+  `meta.exposure_factor` + `bets[].stake_pct_uncapped`). M9 (roadmap) :
+  `CORRELATED_EXPOSURE_MULTIPLIER` (1,5, verrouillé comme les autres
+  paramètres de risque) compte ×1,5 dans la comptabilité du plafond les
+  paris sur des matchs de la même semaine partageant une équipe (report de
+  calendrier, double confrontation) — jamais dans les mises réellement
+  posées, toujours réduites par le même facteur commun ; journalisé dans
+  `meta.correlated_exposure`. Sous-commande
   `sync-results` : remplit `actual_score` (et `actual_ht`) des matchs passés depuis la table `matches`
   après résolution d'alias, tolérance ±2 jours sur la date (report de
   calendrier) ; ce qui reste introuvable est listé « en attente de données
@@ -276,7 +373,11 @@ python -m unittest discover -s tests # tests unitaires
   4 axes attaque/défense × domicile/extérieur, z-test court vs reste.
   Verdict → `reports/fatigue_signal_check.md`. Résultat actuel : aucun
   signal détecté — la calibration (walk-forward tune/validation/test comme
-  M3/M3.5) n'a donc PAS été construite, elle figerait du bruit.
+  M3/M3.5) n'a donc PAS été construite, elle figerait du bruit. M8 (roadmap) :
+  source calendrier complémentaire (coupes, C1/C3) investiguée, pas
+  construite (deux sources candidates testées en connectivité réelle, toutes
+  deux disproportionnées pour le gain attendu) →
+  `reports/m8_congestion_source_investigation.md`.
 - `.github/workflows/tests.yml` — CI : sur push/PR vers `main`, installe
   `requirements.txt`, lance `python -m unittest discover -s tests` puis
   `python check.py` ; échoue si l'un des deux retourne un code non nul.
