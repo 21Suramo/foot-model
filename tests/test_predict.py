@@ -127,6 +127,10 @@ class TestRiskParameters(unittest.TestCase):
         self.assertEqual(predict.CLV_SHARP_SOURCES, ("pinnacle_close",),
                          "CLV calculé uniquement contre une clôture sharp : élargir "
                          "cette liste changerait la grandeur mesurée, pas sa précision")
+        self.assertEqual(predict.CORRELATED_EXPOSURE_MULTIPLIER, 1.5,
+                         "M9 : poids des paris corrélés (équipe partagée entre matchs "
+                         "de la même semaine) dans le plafond d'exposition — heuristique "
+                         "non calibrée, changer ce chiffre doit être délibéré")
         # le défaut du CLI doit rester branché sur la constante, pas figé à part
         default_blend = predict.build_parser().parse_args(
             ["match", "--league", "E0", "--home", "A", "--away", "B"]).blend
@@ -1447,6 +1451,73 @@ class TestSlateExposureCap(unittest.TestCase):
         args = predict.build_parser().parse_args(
             ["match", "--league", "E0", "--home", "A", "--away", "B"])
         self.assertEqual(args.exposure_cap, predict.SLATE_EXPOSURE_CAP)
+
+
+class TestCorrelatedExposure(unittest.TestCase):
+    """M9 : deux matchs de la même semaine partageant une équipe consomment le
+    plafond d'exposition plus vite qu'une simple somme de mises indépendantes."""
+
+    def _res(self, home, away):
+        return {
+            "league": "E0", "home": home, "away": away,
+            "date": datetime.date(2026, 8, 15),
+            "lam_h": 1.6, "lam_a": 1.1, "market_weight": 0.92, "odds_age_days": 1,
+            "final": {"home": 0.60, "draw": 0.22, "away": 0.18},
+            "market": {"home": 0.50, "draw": 0.27, "away": 0.23},
+            "best_odds": {"home": 2.50, "draw": 3.60, "away": 4.40},
+            "grid": {(1, 0): 0.4, (1, 1): 0.35, (0, 1): 0.25},
+        }
+
+    def test_no_shared_team_is_unaffected(self):
+        results = [self._res("H0", "A0"), self._res("H1", "A1")]
+        summary = predict.apply_exposure_cap(results)
+        self.assertEqual(summary["n_correlated"], 0)
+        self.assertFalse(results[0]["correlated"])
+        self.assertFalse(results[1]["correlated"])
+
+    def test_shared_team_is_flagged(self):
+        results = [self._res("Arsenal", "A0"), self._res("Arsenal", "A1")]
+        summary = predict.apply_exposure_cap(results)
+        self.assertEqual(summary["n_correlated"], 2)
+        self.assertTrue(all(r["correlated"] for r in results))
+
+    def test_correlated_group_is_capped_harder_than_independent(self):
+        """À mises brutes identiques, un groupe corrélé réduit le facteur
+        davantage qu'un groupe indépendant — le budget se consomme plus vite."""
+        independent = [self._res(f"H{i}", f"A{i}") for i in range(10)]
+        correlated = [self._res("Arsenal", f"A{i}") for i in range(10)]
+        f_indep = predict.apply_exposure_cap(independent)["factor"]
+        f_corr = predict.apply_exposure_cap(correlated)["factor"]
+        self.assertLess(f_indep, 1.0)   # précondition : le groupe dépasse déjà le plafond
+        self.assertLess(f_corr, f_indep)
+
+    def test_pending_matches_extend_correlation_to_the_journal(self):
+        """Une équipe déjà engagée cette semaine (journal) et rejouée dans le run
+        courant est corrélée même si le run ne contient qu'un seul match."""
+        res = self._res("Arsenal", "A0")
+        pending = {"Arsenal-B": {"home": "Arsenal", "away": "B", "stake": 0.05, "n_bets": 1}}
+        summary = predict.apply_exposure_cap([res], prior=0.05, prior_bets=1,
+                                             pending_matches=pending)
+        self.assertEqual(summary["n_correlated"], 1)
+        self.assertTrue(res["correlated"])
+
+    def test_recap_mentions_correlation(self):
+        results = [self._res("Arsenal", f"A{i}") for i in range(2)]
+        summary = predict.apply_exposure_cap(results)
+        text = predict.exposure_recap(summary)
+        self.assertIn("partagent une équipe", text)
+
+    def test_pending_bet_matches_reads_teams_from_meta(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            entries = [{"match": "Arsenal-Chelsea", "date": "2026-09-19",
+                       "bets": [{"issue": "home", "odds": 2.0, "stake_pct": 0.03}],
+                       "actual_score": None,
+                       "meta": {"home": "Arsenal", "away": "Chelsea"}}]
+            path.write_text(json.dumps(entries))
+            matches = predict.pending_bet_matches(path, datetime.date(2026, 9, 19))
+        self.assertEqual(matches["Arsenal-Chelsea"],
+                         {"home": "Arsenal", "away": "Chelsea", "stake": 0.03, "n_bets": 1})
 
 
 class TestCalibrationConfidenceIntervals(unittest.TestCase):

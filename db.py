@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS predictions (
     freq_a    REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS predictions_derived (
+    match_id  INTEGER NOT NULL REFERENCES matches(match_id),
+    market    TEXT NOT NULL,        -- 'ou25' | 'btts'
+    model_p   REAL NOT NULL,        -- proba recalibrée de l'issue "positive" (over / btts oui)
+    raw_p     REAL NOT NULL,        -- proba avant recalibration (diagnostic)
+    market_p  REAL,                 -- proba marché démargée (NULL si pas de cote, ex. BTTS)
+    freq_p    REAL NOT NULL,        -- baseline fréquence (walk-forward, jamais le futur)
+    PRIMARY KEY (match_id, market)
+);
+
 CREATE TABLE IF NOT EXISTS predictions_m35 (
     match_id    INTEGER PRIMARY KEY REFERENCES matches(match_id),
     xi          REAL NOT NULL,
@@ -134,6 +144,17 @@ def upsert_prediction(conn, row):
         f"INSERT INTO predictions ({', '.join(cols)}) "
         f"VALUES ({', '.join(':' + c for c in cols)}) "
         f"ON CONFLICT(match_id) DO UPDATE SET {updates}",
+        {c: row.get(c) for c in cols},
+    )
+
+
+def upsert_prediction_derived(conn, row):
+    cols = ["match_id", "market", "model_p", "raw_p", "market_p", "freq_p"]
+    updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c not in ("match_id", "market"))
+    conn.execute(
+        f"INSERT INTO predictions_derived ({', '.join(cols)}) "
+        f"VALUES ({', '.join(':' + c for c in cols)}) "
+        f"ON CONFLICT(match_id, market) DO UPDATE SET {updates}",
         {c: row.get(c) for c in cols},
     )
 

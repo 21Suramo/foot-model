@@ -404,6 +404,49 @@ def risk_label(stake_pct):
 SLATE_EXPOSURE_CAP = 0.15
 
 
+# ---------------------------------------------------------------------------
+# Corrélation entre paris (M9) — le plafond ci-dessus somme les mises brutes
+# comme si chaque match était un tirage indépendant. ÇA NE L'EST PAS quand
+# deux affiches de la même semaine partagent une équipe (report de calendrier,
+# double confrontation coupe+championnat) : une même blessure, une même
+# actualité, une même sortie de forme affecte les deux paris à la fois. Un
+# pari sur cette équipe dans les deux matchs n'est donc pas "deux fois moins
+# risqué" que ne le suppose la simple somme des mises — il est plus concentré
+# que la somme ne le dit.
+#
+# CORRELATED_EXPOSURE_MULTIPLIER n'est PAS un coefficient mesuré : aucune
+# donnée de paris multi-matchs corrélés n'existe pour l'estimer (même limite
+# que la division par 2 sur marge aberrante dans market_weight — un choix de
+# rigueur explicite, pas un chiffre calibré sur un backtest). Il ne change
+# JAMAIS les mises elles-mêmes (toujours réduites par le même facteur commun,
+# cf. apply_exposure_cap) : il gonfle uniquement la comptabilité interne du
+# plafond, pour qu'un groupe corrélé consomme le budget plus vite et réduise
+# donc davantage TOUTES les mises du run. Verrouillé, comme les autres
+# paramètres de risque, par tests/test_predict.py::TestRiskParameters.
+#
+# Portée volontairement limitée à l'équipe partagée entre MATCHS DISTINCTS :
+# plusieurs paris (1N2) sur un même match sont déjà comptés correctement par
+# la simple somme (la perte simultanée maximale d'un match est déjà la somme
+# de ses mises, cf. commentaire de SLATE_EXPOSURE_CAP) — rien à corriger là.
+CORRELATED_EXPOSURE_MULTIPLIER = 1.5
+
+
+def _teams_of(d):
+    return (d.get("home"), d.get("away"))
+
+
+def correlated_indices(matches):
+    """Indices de `matches` (dicts avec home/away) dont une équipe apparaît
+    dans un AUTRE élément de la liste — paris corrélés par équipe partagée."""
+    counts = {}
+    for h, a in map(_teams_of, matches):
+        for t in (h, a):
+            if t:
+                counts[t] = counts.get(t, 0) + 1
+    return {i for i, (h, a) in enumerate(map(_teams_of, matches))
+            if (h and counts.get(h, 0) > 1) or (a and counts.get(a, 0) > 1)}
+
+
 def match_stakes(res, no_stake=False):
     """Mises Kelly BRUTES d'un match (avant plafond de slate), par issue."""
     if no_stake or not res.get("best_odds"):
@@ -416,8 +459,9 @@ def match_stakes(res, no_stake=False):
     return out
 
 
-def pending_exposure(path, target_date, exclude_matches=()):
-    """Mises DÉJÀ engagées et non réglées sur la même semaine de matchs.
+def pending_bet_matches(path, target_date, exclude_matches=()):
+    """Paris non réglés de la même semaine que target_date, groupés par match
+    (clé 'Domicile-Extérieur' du journal), avec équipes et mise cumulée.
 
     « Même semaine » = même lundi de référence (backtest.monday_of), la maille
     déjà utilisée par le walk-forward et le refit : c'est le week-end de matchs,
@@ -427,9 +471,11 @@ def pending_exposure(path, target_date, exclude_matches=()):
     RÉÉCRIRE dans le journal — sans quoi un simple ré-run du même match
     compterait sa propre mise deux fois et se plafonnerait tout seul.
 
-    Renvoie (mise_cumulée, nombre_de_paris)."""
+    Une seule lecture du journal sert deux besoins : le total simple
+    (pending_exposure) et la détection des paris corrélés par équipe partagée
+    avec le run courant (M9, apply_exposure_cap)."""
     week = backtest.monday_of(target_date.isoformat())
-    total, count = 0.0, 0
+    out = {}
     for e in load_journal(path):
         if e.get("actual_score") is not None:
             continue
@@ -440,14 +486,27 @@ def pending_exposure(path, target_date, exclude_matches=()):
                 continue
         except (KeyError, ValueError):
             continue
-        for b in e.get("bets") or []:
-            total += float(b.get("stake_pct") or 0.0)
-            count += 1
-    return total, count
+        bets = e.get("bets") or []
+        if not bets:
+            continue
+        meta = e.get("meta") or {}
+        out[e["match"]] = {
+            "home": meta.get("home"), "away": meta.get("away"),
+            "stake": sum(float(b.get("stake_pct") or 0.0) for b in bets),
+            "n_bets": len(bets),
+        }
+    return out
+
+
+def pending_exposure(path, target_date, exclude_matches=()):
+    """Mise cumulée et nombre de paris déjà engagés, non réglés, même semaine."""
+    matches = pending_bet_matches(path, target_date, exclude_matches)
+    return (sum(m["stake"] for m in matches.values()),
+            sum(m["n_bets"] for m in matches.values()))
 
 
 def apply_exposure_cap(results, cap=SLATE_EXPOSURE_CAP, no_stake=False,
-                       prior=0.0, prior_bets=0):
+                       prior=0.0, prior_bets=0, pending_matches=None):
     """Pose `stakes` (brutes) et `exposure_factor` sur chaque résultat du run.
 
     Doit être appelée sur TOUS les matchs du run avant d'imprimer ou de
@@ -456,22 +515,43 @@ def apply_exposure_cap(results, cap=SLATE_EXPOSURE_CAP, no_stake=False,
     (pending_exposure) — c'est elle qui rend le plafond opérant dans le vrai
     flux, où les matchs sont générés un par un.
 
+    `pending_matches` (pending_bet_matches) sert à détecter les paris
+    CORRÉLÉS par équipe partagée (M9) entre le run courant et les paris déjà
+    engagés cette semaine — voir CORRELATED_EXPOSURE_MULTIPLIER. None ou {}
+    désactive la détection (comportement d'avant M9, inchangé).
+
     Renvoie le récapitulatif du run."""
     stakes = [match_stakes(r, no_stake) for r in results]
-    gross = sum(sum(s.values()) for s in stakes)
-    budget = max(0.0, cap - prior)
+    totals = [sum(s.values()) for s in stakes]
+    gross = sum(totals)
+
+    pending_list = list((pending_matches or {}).values())
+    pool = [{"home": r.get("home"), "away": r.get("away")} for r in results] + pending_list
+    corr = correlated_indices(pool)
+    n = len(results)
+    run_corr = {i for i in corr if i < n}
+    pending_corr_extra = sum(pending_list[i - n]["stake"] * (CORRELATED_EXPOSURE_MULTIPLIER - 1.0)
+                             for i in corr if i >= n)
+
+    effective_gross = sum(t * (CORRELATED_EXPOSURE_MULTIPLIER if i in run_corr else 1.0)
+                          for i, t in enumerate(totals))
+    effective_prior = prior + pending_corr_extra
+    budget = max(0.0, cap - effective_prior)
     # Tolérance : 3 × 0,05 vaut 0,15000000000000002 en binaire. Sans elle, un
     # match seul dont les trois issues touchent le plafond individuel serait
     # réduit d'un cheveu, ce qui contredirait l'invariant documenté.
-    factor = 1.0 if gross <= budget * (1.0 + 1e-9) else (budget / gross if gross else 1.0)
-    for r, s in zip(results, stakes):
+    factor = (1.0 if effective_gross <= budget * (1.0 + 1e-9)
+              else (budget / effective_gross if effective_gross else 1.0))
+    for i, (r, s) in enumerate(zip(results, stakes)):
         r["stakes"] = s
         r["exposure_factor"] = factor
         r["exposure_cap"] = cap
+        r["correlated"] = i in run_corr
     return {"gross": gross, "cap": cap, "factor": factor, "net": gross * factor,
             "prior": prior, "prior_bets": prior_bets, "budget": budget,
             "total": prior + gross * factor,
-            "n_bets": sum(len(s) for s in stakes), "n_matches": len(results)}
+            "n_bets": sum(len(s) for s in stakes), "n_matches": len(results),
+            "n_correlated": len(run_corr)}
 
 
 def final_stakes(res, no_stake=False):
@@ -501,6 +581,11 @@ def exposure_recap(summary):
         prior_txt = (f"\n  Déjà engagé cette semaine (journal, paris non réglés) : "
                      f"{summary['prior']:.1%} sur {summary['prior_bets']} pari(s) — "
                      f"budget restant {summary['budget']:.1%}.")
+    if summary.get("n_correlated"):
+        prior_txt += (f"\n  ⚠ {summary['n_correlated']} affiche(s) de ce run partagent une "
+                      f"équipe avec un autre match de la semaine (report de calendrier, "
+                      f"double confrontation) : comptées ×{CORRELATED_EXPOSURE_MULTIPLIER:g} "
+                      f"dans le plafond (heuristique non calibrée, cf. CLAUDE.md M9).")
     head = (f"Exposition simultanée : {summary['n_bets']} pari(s) ajouté(s) sur "
             f"{summary['n_matches']} affiche(s), {summary['gross']:.1%} de bankroll "
             f"en mises brutes")
@@ -846,6 +931,7 @@ def log_prediction(path, res, no_stake=False):
                  "odds_age_days": res["odds_age_days"],
                  "devig": res.get("devig"),
                  "exposure_factor": round(res.get("exposure_factor", 1.0), 6),
+                 "correlated_exposure": res.get("correlated", False),
                  "no_odds_reason": res.get("no_odds_reason"),
                  "lineup_adjustment": res.get("lineup_adjustment") or {"applied": False}},
     }
@@ -1648,9 +1734,11 @@ def cmd_match(args, conn):
     # Le run courant réécrit ses propres entrées non réglées : elles ne comptent
     # pas comme exposition « déjà engagée » (sinon un ré-run se plafonnerait seul).
     rewritten = [(f"{r['home']}-{r['away']}", r["date"].isoformat()) for r in results]
-    prior, prior_bets = pending_exposure(args.log, target_date, rewritten)
+    pending_matches = pending_bet_matches(args.log, target_date, rewritten)
+    prior = sum(m["stake"] for m in pending_matches.values())
+    prior_bets = sum(m["n_bets"] for m in pending_matches.values())
     exposure = apply_exposure_cap(results, args.exposure_cap, args.no_stake,
-                                  prior, prior_bets)
+                                  prior, prior_bets, pending_matches)
 
     for i, res in enumerate(results):
         if i:
