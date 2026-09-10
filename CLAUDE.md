@@ -469,7 +469,7 @@ python pipeline.py --update && python predict.py sync-results  # résultats rée
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
-python clv_signal_check.py           # roadmap C1 : le mouvement de cote est-il un signal ? -> reports/clv_signal_check.md (réponse : oui)
+python clv_signal_check.py [--tune|--run|--shuffle-test]  # roadmap C1 : score composite mouvement de cote (réponse finale : non, cf. reports/clv_signal_check.md)
 ODDS_API_KEY=... python odds_snapshot.py [--markets h2h,totals] [--regions eu,uk]  # roadmap A2 : snapshot multi-books -> table book_odds
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
 python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
