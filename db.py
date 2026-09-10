@@ -61,6 +61,31 @@ CREATE TABLE IF NOT EXISTS predictions_derived (
     PRIMARY KEY (match_id, market)
 );
 
+CREATE TABLE IF NOT EXISTS book_odds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetched_at    TEXT NOT NULL,   -- horodatage de la requête (ISO UTC) : c'est une SÉRIE
+                                    -- TEMPORELLE (roadmap A2), jamais un upsert qui écrase
+    league        TEXT NOT NULL,   -- E0 / SP1 / F1 (convention interne, pas le sport_key API)
+    commence_time TEXT NOT NULL,   -- coup d'envoi (ISO UTC, tel que renvoyé par l'API)
+    home          TEXT NOT NULL,   -- nom d'équipe TEL QUE RENVOYÉ PAR L'API, pas encore
+    away          TEXT NOT NULL,   -- résolu par team_aliases (source différente de football-data)
+    book          TEXT NOT NULL,   -- clé bookmaker de l'API (ex. 'pinnacle', 'winamax_fr')
+    market        TEXT NOT NULL,   -- 'h2h' | 'totals'
+    outcome       TEXT NOT NULL,   -- h2h : 'home'/'draw'/'away' ; totals : 'Over'/'Under'
+    point         REAL,            -- ligne du marché totals (ex. 2.5) ; NULL pour h2h
+    price         REAL NOT NULL   -- cote décimale
+);
+
+-- Index UNIQUE par expression (pas une contrainte de table) : SQL standard
+-- traite NULL != NULL, donc un UNIQUE(..., point) ne déduplique JAMAIS les
+-- lignes h2h (point toujours NULL). COALESCE(point, -1) leur donne une vraie
+-- valeur comparable ; -1 est sûr, aucune ligne de handicap/totaux réelle
+-- n'est négative.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_book_odds_unique ON book_odds(
+    fetched_at, league, home, away, book, market, outcome, COALESCE(point, -1));
+
+CREATE INDEX IF NOT EXISTS idx_book_odds_lookup ON book_odds(league, home, away, commence_time);
+
 CREATE TABLE IF NOT EXISTS predictions_m35 (
     match_id    INTEGER PRIMARY KEY REFERENCES matches(match_id),
     xi          REAL NOT NULL,
@@ -166,6 +191,20 @@ def upsert_prediction_m35(conn, row):
         f"VALUES ({', '.join(':' + c for c in M35_COLS)}) "
         f"ON CONFLICT(match_id) DO UPDATE SET {updates}",
         {c: row.get(c) for c in M35_COLS},
+    )
+
+
+def insert_book_odds(conn, row):
+    """Insère une ligne de cote multi-books (roadmap A2). PAS un upsert : c'est
+    une série temporelle (book_odds.fetched_at), on ne veut jamais écraser un
+    snapshot précédent. INSERT OR IGNORE sur la contrainte UNIQUE : un même
+    fetch relancé deux fois (mêmes horodatages) ne duplique pas."""
+    cols = ["fetched_at", "league", "commence_time", "home", "away",
+            "book", "market", "outcome", "point", "price"]
+    conn.execute(
+        f"INSERT OR IGNORE INTO book_odds ({', '.join(cols)}) "
+        f"VALUES ({', '.join(':' + c for c in cols)})",
+        {c: row.get(c) for c in cols},
     )
 
 

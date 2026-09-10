@@ -344,18 +344,41 @@ exactement ce que la discipline du projet interdit.
   (jamais retoucher après le TEST), et se méfier du biais de confirmation
   qu'un signal aussi net peut créer. Investigué et documenté, pas construit
   — ne pas confondre avec un chantier terminé.
-- **A2, correction : la version « Pinnacle clôture via football-data.co.uk
-  comme référence sharp » proposée initialement pour contourner l'absence
-  de Pinnacle chez The Odds API NE FONCTIONNE PAS comme annoncé.**
-  football-data.co.uk ne donne que la clôture (une valeur figée après coup),
-  jamais un flux temps réel : ça permet de mesurer *a posteriori* « cote
-  retail prise vs clôture sharp » (un CLV dégradé, biaisé par les mouvements
-  survenus après la prise), mais PAS « cote retail vs sharp à l'instant T »,
-  qui est la vraie définition du CLV que A2 vise. Sans un flux Pinnacle
-  temps réel (payant, ou un fournisseur alternatif dont le free tier et les
-  CGU n'ont pas été vérifiés ici), A2 ne peut pas tenir sa promesse. Reste
-  NON ATTAQUÉ, décision utilisateur (fournisseur + budget) à prendre en
-  connaissance de cause de cette limite.
+- **A2 — acquisition multi-books : DÉMARRÉ (capture de snapshot), PAS
+  terminé.** Deuxième correction sur ce chantier : l'affirmation précédente
+  disant que The Odds API n'inclut PAS Pinnacle était FAUSSE — trouvée sur
+  des sites au ton « comparatif 2026 » qui se sont avérés être eux-mêmes du
+  contenu promotionnel, jamais vérifiée par un appel réel. Vérifié depuis
+  par appel réel à l'API le 2026-09-10 (`GET /v4/sports/{sport}/odds/`,
+  `regions=eu`) : Pinnacle **est** dans la réponse pour E0, SP1 et F1, aux
+  côtés de books retail pertinents pour un utilisateur français
+  (`winamax_fr`, `betclic_fr`, `pmu_fr`). Coût observé : 1 crédit par
+  (ligue × région × marché demandé) — 3 crédits pour un snapshot h2h des
+  3 ligues, sur un quota gratuit de 500 crédits/mois (~160 snapshots/mois
+  en h2h seul). La leçon à retenir : une info de fournisseur/API tirée d'une
+  recherche web doit être revérifiée par un appel réel avant de conditionner
+  une décision dessus — pas prise pour argent comptant même quand plusieurs
+  sources semblent converger.
+
+  Implémenté : `oddsapi.py` (appel API + parsing, clé lue depuis la
+  variable d'environnement `ODDS_API_KEY` — **jamais en dur dans le code ni
+  committée**, cf. section Conventions) et `odds_snapshot.py` (CLI, capture
+  un snapshot des 3 ligues -> table `book_odds`, une vraie SÉRIE TEMPORELLE
+  — chaque appel AJOUTE des lignes horodatées, n'écrase jamais un snapshot
+  précédent, contrairement aux upserts de `matches`/`predictions`). Testé
+  en conditions réelles : 3699 lignes capturées sur les 3 ligues (books
+  retail + Pinnacle), déjà committées dans `data/football.db`.
+
+  **PAS fait** (le reste de la demande originale d'A2) : pas de cadence de
+  capture automatisée (le script existe, rien ne le déclenche à intervalle
+  régulier — câbler ça dans `.github/workflows/weekly.yml` suppose que
+  l'utilisateur ajoute `ODDS_API_KEY` comme secret du dépôt, une décision
+  qui lui revient, pas prise ici) ; pas de résolution d'alias entre les noms
+  d'équipe de l'API et ceux de football-data.co.uk (nécessaire pour croiser
+  book_odds avec les résultats/le modèle — les noms EPL/La Liga/Ligue 1
+  semblent déjà proches mais pas vérifiés systématiquement) ; `predict.py`
+  n'utilise pas encore ces cotes (l'entrée `--odds` reste manuelle). Ne pas
+  présenter A2 comme terminé sur la base de cette seule capture.
 - **C2 (fractionnement books/limites) : le point d'ancrage existe déjà.**
   `--exposure-cap` (M7/M9 ci-dessus) est bien, comme le document le note
   lui-même, « le bon endroit » pour des limites par book — mais rien à y
@@ -401,6 +424,7 @@ python predict.py report             # rapport de calibration -> reports/product
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
 python clv_signal_check.py           # roadmap C1 : le mouvement de cote est-il un signal ? -> reports/clv_signal_check.md (réponse : oui)
+ODDS_API_KEY=... python odds_snapshot.py [--markets h2h,totals] [--regions eu,uk]  # roadmap A2 : snapshot multi-books -> table book_odds
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
 python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
@@ -411,7 +435,24 @@ python -m unittest discover -s tests # tests unitaires
 
 - `db.py` — schéma SQLite (`data/football.db`) : tables `matches`
   (clé unique date+home+away) et `team_aliases`, upserts idempotents.
-  Les upserts de matchs ne touchent jamais aux colonnes xG.
+  Les upserts de matchs ne touchent jamais aux colonnes xG. `book_odds`
+  (roadmap A2) est une SÉRIE TEMPORELLE, pas un upsert : `insert_book_odds`
+  fait un `INSERT OR IGNORE` sur un index UNIQUE par expression
+  (`COALESCE(point, -1)`, nécessaire car SQL traite NULL != NULL — un
+  UNIQUE direct sur `point` ne déduplique jamais les lignes h2h).
+- `oddsapi.py` / `odds_snapshot.py` — roadmap A2 : cotes multi-books via
+  The Odds API (the-odds-api.com). Clé lue depuis `ODDS_API_KEY`
+  (variable d'environnement, jamais committée — cf. Conventions).
+  Couverture vérifiée par appel réel le 2026-09-10 (pas une source web) :
+  `regions=eu` seul couvre Pinnacle ET plusieurs books retail pertinents
+  (`winamax_fr`, `betclic_fr`, `pmu_fr`) sur E0/SP1/F1, à 1 crédit par
+  (ligue × région × marché) — 3 crédits pour un snapshot h2h des 3 ligues
+  (défaut), quota gratuit 500 crédits/mois. `odds_snapshot.py` ne planifie
+  rien lui-même (pas de cron intégré) : à lancer à la main, ou câblé dans
+  `.github/workflows/weekly.yml` si l'utilisateur ajoute `ODDS_API_KEY`
+  comme secret du dépôt. Les noms d'équipe stockés sont ceux de l'API,
+  PAS encore résolus via `team_aliases` vers la convention football-data.co.uk
+  — à faire avant de croiser `book_odds` avec `matches`/le modèle.
 - `footballdata.py` — CSV football-data.co.uk avec cache dans
   `data/raw/football-data/` ; priorité cotes de clôture Pinnacle, repli
   moyenne du marché, puis ouverture (saison 2018-19, colonne `odds_source`).
@@ -637,3 +678,10 @@ la source ne sont pas des erreurs).
   entièrement avec `python pipeline.py --update`.
 - Après toute modification du pipeline : relancer les tests puis `check.py`
   et n'intégrer que si le résultat global est OK (code retour 0).
+- **Secrets (clés API) : jamais en dur dans le code, jamais dans un fichier
+  committé — toujours via variable d'environnement.** `oddsapi.py` lit
+  `ODDS_API_KEY` avec `os.environ` et échoue explicitement si absente,
+  plutôt que d'accepter une valeur par défaut ou un fichier de config
+  versionné. Si l'automatisation d'un script qui en a besoin est ajoutée à
+  `.github/workflows/`, la clé doit être un secret du dépôt GitHub
+  (Settings → Secrets), jamais une valeur en clair dans le YAML.

@@ -1,0 +1,78 @@
+[
+  {
+    "id": "d09677edcf1fb82ad75a8df58bb26eab",
+    "sport_key": "soccer_epl",
+    "sport_title": "EPL",
+    "commence_time": "2026-09-12T14:00:00Z",
+    "home_team": "Aston Villa",
+    "away_team": "Nottingham Forest",
+    "bookmakers": [
+      {
+        "key": "winamax_fr",
+        "title": "Winamax (FR)",
+        "last_update": "2026-09-10T09:59:41Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-09-10T09:59:41Z",
+            "outcomes": [
+              {
+                "name": "Aston Villa",
+                "price": 2.15
+              },
+              {
+                "name": "Nottingham Forest",
+                "price": 3.05
+              },
+              {
+                "name": "Draw",
+                "price": 3.35
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "pinnacle",
+        "title": "Pinnacle",
+        "last_update": "2026-09-10T10:00:33Z",
+        "markets": [
+          {
+            "key": "h2h",
+            "last_update": "2026-09-10T10:00:33Z",
+            "outcomes": [
+              {
+                "name": "Aston Villa",
+                "price": 2.23
+              },
+              {
+                "name": "Nottingham Forest",
+                "price": 3.3
+              },
+              {
+                "name": "Draw",
+                "price": 3.53
+              }
+            ]
+          },
+          {
+            "key": "totals",
+            "last_update": "2026-09-10T10:00:33Z",
+            "outcomes": [
+              {
+                "name": "Over",
+                "price": 2.02,
+                "point": 2.5
+              },
+              {
+                "name": "Under",
+                "price": 1.87,
+                "point": 2.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
