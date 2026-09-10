@@ -318,32 +318,52 @@ exactement ce que la discipline du projet interdit.
   censés remplacer proprement — le document le dit lui-même (« ton M6 est
   un pansement post-hoc »), ce n'est pas un désaccord avec l'état actuel
   du projet.
-- **C1 (CLV comme signal d'entrée) : investigué, signal détecté, PAS encore
-  construit en production.** Correction d'une erreur de cette revue : le CLV
-  existant (M5.2/M7 ci-dessus) est un signal *a posteriori*, C1 en veut un
-  *a priori* — mais contrairement à ce qui a été dit initialement, ça n'a
-  PAS besoin d'une nouvelle source de cotes (A2). football-data.co.uk
-  fournit déjà ouverture ET clôture Pinnacle dans ses CSV bruts
-  (`data/raw/football-data/`, déjà exploités par `backtest_blend.py`) : de
-  quoi backtester rétroactivement le signal SANS dépenser un euro. Fait
-  suivant le protocole `fatigue_signal_check.py` (vérifier le signal AVANT
-  de construire, jamais sur le TEST) : `clv_signal_check.py`, walk-forward
-  sur 1920+VALIDATION, compare le ROI théorique des paris où le modèle voit
-  de la value à l'ouverture ET où le marché a bougé vers cette issue d'ici
-  la clôture (« convergent ») vs l'inverse (« divergent »).
-  **Résultat honnête** ([reports/clv_signal_check.md](reports/clv_signal_check.md)) :
-  signal net et significatif — ROI convergents +4,3 % vs divergents −10,7 %,
-  écart +15,0 points IC 95 % [+3,1 ; +27,0 pts] (bootstrap non apparié,
-  `bootstrap.ci_diff_mean`), n=1650/1669. Portée à noter : « edge > 0 » n'a
-  aucun seuil de marge (contrairement à la production) — mesure le signal
-  sur tout désaccord modèle/marché, pas seulement les paris qu'on aurait
-  réellement engagés ; un vrai C1 en production ajouterait ce seuil.
-  **Ce que ce résultat ne dit PAS** : que C1 complet (score composite,
-  mise modulée) doit être codé maintenant. Le protocole et la roadmap
-  elle-même l'exigent : régler un tel score sur la VALIDATION seule
-  (jamais retoucher après le TEST), et se méfier du biais de confirmation
-  qu'un signal aussi net peut créer. Investigué et documenté, pas construit
-  — ne pas confondre avec un chantier terminé.
+- **C1 (CLV comme signal d'entrée) : investigué EN ENTIER (diagnostic +
+  score composite tune/test/shuffle), verdict final NÉGATIF — pas de signal
+  actionnable, rien construit en production.** Correction d'une erreur de
+  cette revue : le CLV existant (M5.2/M7 ci-dessus) est un signal
+  *a posteriori*, C1 en veut un *a priori* — mais contrairement à ce qui a
+  été dit initialement, ça n'a PAS besoin d'une nouvelle source de cotes
+  (A2). football-data.co.uk fournit déjà ouverture ET clôture Pinnacle dans
+  ses CSV bruts (`data/raw/football-data/`, déjà exploités par
+  `backtest_blend.py`) : de quoi backtester rétroactivement SANS dépenser
+  un euro. Deux chantiers dans `clv_signal_check.py`, dans l'ordre où ils
+  ont été construits — **le second corrige et invalide la conclusion trop
+  optimiste du premier, à lire ensemble** :
+
+  1. **Diagnostic exploratoire** (`collect_bets`/`summarize`, walk-forward
+     sur 1920+VALIDATION, jamais le TEST) : compare le ROI des paris où le
+     modèle voit de la value à l'ouverture ET où le marché a bougé vers
+     cette issue d'ici la CLÔTURE (« convergent ») vs l'inverse. Résultat
+     brut : écart net, ROI convergents +4,3 % vs divergents −10,7 %, IC 95 %
+     [+3,1 ; +27,0 pts]. **Ce résultat s'est révélé trompeur** (voir 2).
+  2. **Score composite actionnable, protocole complet tune/test/shuffle**
+     (même rigueur que M3.5/A1) : correction méthodologique — la clôture
+     n'est PAS connue au moment de parier, seule fautait dans le diagnostic
+     1. La cote « prise » est simulée à J-2 du coup d'envoi (`aged_taken`,
+     interpolation fair + marge séparée entre ouverture et clôture, même
+     proxy que `backtest_blend.aged_fair`, J-2 fixé a priori dans la bande
+     de fraîcheur déjà utilisée par `predict.py`) ; le mouvement utilisé est
+     ouverture→PRIS, jamais pris→clôture. Score = edge + w×mouvement,
+     (w, seuil) réglés sur la VALIDATION seule (grid search du ROI
+     théorique, n ≥ 100 exigé), appliqués UNE FOIS sur le TEST.
+     **Résultat honnête** ([reports/clv_signal_check.md](reports/clv_signal_check.md)) :
+     sur le test, la sélection par score composite ne bat PAS la baseline
+     (−9,7 % vs −8,6 % sans filtre, écart −1,1 pt IC 95 % [−13,4 ; +11,9 pts]
+     — IC n'exclut pas 0) ; le shuffle-test étendu (999 permutations du
+     mouvement, edge/résultat réels conservés) confirme : p = 0,549, aucune
+     preuve que le peu de lift observé vienne du mouvement plutôt que du
+     bruit. **Le signal de l'étape 1 était très probablement un artefact de
+     fuite temporelle** : un match où le marché finit par bouger vers
+     l'issue que le modèle aimait est presque par construction un match où
+     le marché s'est rapproché de la vérité — regarder la clôture, c'est
+     regarder un peu dans le futur du pari.
+  **Conclusion : ne pas construire de modulation de mise sur le mouvement
+  de cote avec les données actuelles.** Chantier fermé proprement (comme
+  fatigue/M8), pas laissé en l'air — à rouvrir seulement avec une donnée
+  nouvelle (ex. un vrai flux de cotes intra-journalières via A2/Odds API,
+  qui permettrait de mesurer un mouvement réellement pré-pari sans recourir
+  à une interpolation entre deux points).
 - **A2 — acquisition multi-books : DÉMARRÉ (capture de snapshot), PAS
   terminé.** Deuxième correction sur ce chantier : l'affirmation précédente
   disant que The Odds API n'inclut PAS Pinnacle était FAUSSE — trouvée sur
@@ -423,8 +443,9 @@ exactement ce que la discipline du projet interdit.
   modèle joueur de B2) — rien à ensembler tant que Dixon-Coles M3.5 reste
   seul en production.
 
-Conclusion : A1 est implémenté et exécuté en entier. C1 est investigué avec
-un signal détecté et documenté (`clv_signal_check.py`), mais PAS construit
+Conclusion : A1 est implémenté et exécuté en entier. C1 est investigué EN
+ENTIER (diagnostic + score composite tune/test/shuffle) avec un verdict final
+NÉGATIF, documenté (`clv_signal_check.py`) — chantier fermé, rien construit
 en production. A2-D3 restent NON ATTAQUÉS pour les raisons détaillées item
 par item ci-dessus (décision fournisseur, ou volume de paris/données qui
 n'existe pas encore) ; rien de nouveau n'y a été codé, aucun hyperparamètre
@@ -631,19 +652,37 @@ python -m unittest discover -s tests # tests unitaires
   deux disproportionnées pour le gain attendu) →
   `reports/m8_congestion_source_investigation.md`.
 - `clv_signal_check.py` — roadmap C1 (Phase C, à ne pas confondre avec la
-  compétition C1/C3 ci-dessus) : vérifie AVANT de construire un score
-  composite modèle+mouvement de cote si le signal existe, même discipline
-  que `fatigue_signal_check.py` (walk-forward sur 1920+VALIDATION, jamais le
-  TEST). Réutilise `backtest_blend.opening_odds_map` (CSV bruts déjà en
-  cache pour A2/M5) pour les cotes d'ouverture — zéro nouvelle source. Pour
-  chaque match, isole le pari « value » (edge modèle > 0 à l'ouverture, sans
-  seuil de marge — portée à noter), le classe convergent/divergent selon si
-  le marché a bougé vers cette issue d'ici la clôture, compare le ROI
-  théorique des deux groupes (`bootstrap.ci_diff_mean`, groupes disjoints).
-  Verdict → `reports/clv_signal_check.md`. Résultat actuel : signal net et
-  significatif (écart ROI +15,0 pts, IC [+3,1 ; +27,0 pts]) — investigué et
-  documenté, mais le score composite / la modulation de mise en production
-  n'ont PAS été construits (à régler sur la validation seule si entrepris).
+  compétition C1/C3 ci-dessus). Deux chantiers, le second corrigeant le
+  premier :
+  1. `collect_bets`/`summarize` — diagnostic exploratoire, même discipline
+     que `fatigue_signal_check.py` (walk-forward sur 1920+VALIDATION, jamais
+     le TEST). Isole le pari « value » (edge modèle > 0 à l'ouverture, sans
+     seuil de marge), classe convergent/divergent selon si le marché a
+     bougé vers cette issue d'ici la CLÔTURE, compare le ROI théorique des
+     deux groupes (`bootstrap.ci_diff_mean`). A trouvé un écart net (+15,0
+     pts) qui s'est révélé être un artefact de fuite temporelle (voir 2).
+  2. `aged_taken`/`collect_composite_records`/`tune`/`run`/`shuffle_test` —
+     protocole complet (même rigueur que M3.5/A1) : la cote « prise » est
+     simulée à J-2 du coup d'envoi (interpolation fair + marge séparée entre
+     ouverture et clôture, `aged_taken`, même proxy que
+     `backtest_blend.aged_fair`), le mouvement utilisé est ouverture→PRIS
+     (jamais pris→clôture, inconnu au moment de parier). `tune()` règle
+     (w, seuil) du score composite sur la VALIDATION seule (grid search du
+     ROI théorique, n ≥ `MIN_BETS_FOR_TUNE`=100, refuse de re-régler si déjà
+     figé) ; `run()` applique une fois sur le TEST ; `shuffle_test()` permute
+     le mouvement entre paris (999 tirages, edge/résultat réels conservés)
+     pour vérifier que le signal n'est pas un artefact mécanique de la
+     sélection. Réutilise `backtest_blend.opening_odds_map`/`OPEN_HORIZON`
+     (CSV bruts déjà en cache pour A2/M5) — zéro nouvelle source.
+  Verdict → `reports/clv_signal_check.md`, `main()` régénère toujours les
+  DEUX sections (peu importe les flags passés) en lisant l'état persisté
+  (`data/clv_composite_frozen.json`/`_test_results.json`/
+  `_shuffle_check.json`, non versionnés comme `xi_frozen.json`). **Résultat
+  final : NÉGATIF** — le score composite ne bat pas la baseline sur le test
+  (IC n'exclut pas 0) et le shuffle-test confirme (p=0,549) : le signal du
+  chantier 1 était un artefact de la clôture (regarder le futur du pari
+  pour classer convergent/divergent). Chantier fermé, rien construit en
+  production.
 - `.github/workflows/tests.yml` — CI : sur push/PR vers `main`, installe
   `requirements.txt`, lance `python -m unittest discover -s tests` puis
   `python check.py` ; échoue si l'un des deux retourne un code non nul.
