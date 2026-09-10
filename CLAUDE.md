@@ -3,6 +3,36 @@
 Modèle de pronostics football : pipeline de données SQLite (résultats, cotes
 de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
 
+## Synthèse honnête (à lire avant tout le reste)
+
+**À ce jour (2026-09-10), aucun chantier testé n'a produit d'edge mesurable
+contre le marché de clôture sharp.** M3, M3.5, M5/M5.1-3, M6, M7, M9, A1
+(marchés dérivés) et le diagnostic fatigue/M8 sont tous des verdicts
+honnêtes — mais aucun ne bat nettement et durablement le marché. Le
+meilleur résultat reste M3.5 : Brier à **+1,78 % du marché**, IC 95 %
+[+1,24 ; +2,34 %] — un modèle qui approche le marché sans le battre. C1
+(mouvement de cote comme signal d'entrée), investigué en entier avec un
+protocole complet (tune/test/shuffle), a un verdict final NÉGATIF. Cette
+phrase est la seule chose qu'un lecteur pressé doit retenir de ce fichier ;
+le reste ci-dessous est le détail qui justifie chaque verdict individuel.
+
+## Critères d'arrêt
+
+Trois règles explicites, pour décider d'arrêter un chantier sans
+culpabiliser plutôt que d'empiler les tentatives en espérant que la
+suivante sera la bonne :
+
+1. **Un chantier est fermé** si son critère de succès n'est pas atteint sur
+   le test ET que l'IC bootstrap de l'écart n'exclut pas 0 (déjà appliqué
+   implicitement à C1, fatigue/M8 ; à appliquer explicitement à tout
+   nouveau chantier).
+2. **Le projet entier passe en revue critique** si, à 2027-09-10 (12 mois
+   après cette synthèse), aucun chantier n'a produit d'edge mesurable
+   contre le marché de clôture sharp.
+3. **Une ligne de production est abandonnée** si son CLV réel moyen est
+   négatif sur 100+ paris réglés (cf. Routine de suivi ci-dessous — le CLV
+   converge plus vite que le ROI, c'est le signal à lire en premier).
+
 ## État du projet
 
 - **M2 — pipeline de données : terminé** (tag `m2-pipeline`).
@@ -743,8 +773,15 @@ la source ne sont pas des erreurs).
 
 ## Conventions
 
-- Les données (`data/`) ne sont pas versionnées ; la base se reconstruit
-  entièrement avec `python pipeline.py --update`.
+- `data/` n'est PAS versionné par défaut (la base se reconstruit entièrement
+  avec `python pipeline.py --update`), **sauf quatre fichiers versionnés
+  volontairement** : `football.db`, `production_journal.json` (données
+  personnelles de paris — **le dépôt doit rester privé**, voir
+  `data/README.md`), `m35_frozen.json` (réglages M3.5 figés) et
+  `data/README.md` lui-même. `.gitignore` encode cette règle par exception
+  (`data/*` ignoré, puis les quatre fichiers explicitement inclus) — toute
+  autre présence/absence dans `data/` est une incohérence à corriger, pas
+  un cas particulier à ajouter en silence.
 - Après toute modification du pipeline : relancer les tests puis `check.py`
   et n'intégrer que si le résultat global est OK (code retour 0).
 - **Secrets (clés API) : jamais en dur dans le code, jamais dans un fichier

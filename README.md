@@ -539,6 +539,15 @@ python odds_snapshot.py [--markets h2h,totals] [--regions eu,uk]   # -> table bo
 
 ## Résultats
 
+> **Synthèse honnête.** À ce jour (2026-09-10), aucun chantier testé n'a
+> produit d'edge mesurable contre le marché de clôture sharp. Le meilleur
+> résultat reste M3.5 ci-dessous : Brier à **+1,78 % du marché**, IC 95 %
+> [+1,24 ; +2,34 %] — un modèle qui *approche* le marché sans le battre.
+> Les marchés dérivés (A1) et le signal de mouvement de cote (C1, protocole
+> complet tune/test/shuffle) ont tous les deux des verdicts finaux négatifs.
+> Détail complet, y compris les règles qui décident quand fermer un
+> chantier, dans [CLAUDE.md](CLAUDE.md#critères-darrêt).
+
 4338 matchs de test (saisons 2022-23 à 2025-26, 3 ligues), refit hebdomadaire.
 Réglages M3.5 figés sur validation 2020-21 + 2021-22 : `w = 0.6`, `ξ = 0.003`,
 `κ = 1.0`, `t = 1.077`.
