@@ -769,14 +769,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-2",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "lambda_home": 2.112,
       "lambda_away": 1.107,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 1.46,
+      "draw": 4.7,
+      "away": 6.09,
+      "source": "avg_close"
     }
   },
   {
@@ -795,14 +801,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.748,
       "lambda_away": 1.11,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 2.18,
+      "draw": 3.46,
+      "away": 3.24,
+      "source": "avg_close"
     }
   },
   {
@@ -821,14 +833,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.592,
       "lambda_away": 1.294,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 1.72,
+      "draw": 3.82,
+      "away": 4.72,
+      "source": "avg_close"
     }
   },
   {
@@ -847,14 +865,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-2",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.523,
       "lambda_away": 1.552,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 2.15,
+      "draw": 3.67,
+      "away": 3.06,
+      "source": "avg_close"
     }
   },
   {
@@ -873,8 +897,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "4-3",
+    "actual_ht": "3-1",
     "meta": {
       "model": "M5",
       "home": "Chelsea",
@@ -883,6 +907,12 @@
       "lambda_away": 1.386,
       "market_weight": 0.92,
       "odds_age_days": 0
+    },
+    "closing_odds": {
+      "home": 1.83,
+      "draw": 3.83,
+      "away": 3.89,
+      "source": "avg_close"
     }
   },
   {
@@ -901,14 +931,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.661,
       "lambda_away": 1.461,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 2.74,
+      "draw": 3.4,
+      "away": 2.48,
+      "source": "avg_close"
     }
   },
   {
@@ -927,14 +963,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.273,
       "lambda_away": 1.151,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 2.22,
+      "draw": 3.29,
+      "away": 3.28,
+      "source": "avg_close"
     }
   },
   {
@@ -953,14 +995,20 @@
     },
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "5-2",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 2.586,
       "lambda_away": 0.856,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 1.34,
+      "draw": 5.39,
+      "away": 7.68,
+      "source": "avg_close"
     }
   },
   {
@@ -975,14 +1023,20 @@
     "market_probs": null,
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.048,
       "lambda_away": 1.631,
       "market_weight": 0.0,
       "odds_age_days": null
+    },
+    "closing_odds": {
+      "home": 6.54,
+      "draw": 4.41,
+      "away": 1.47,
+      "source": "avg_close"
     }
   },
   {
@@ -1001,14 +1055,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-2",
+    "actual_ht": "3-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.827,
       "lambda_away": 1.119,
       "market_weight": 0.92,
       "odds_age_days": 1
+    },
+    "closing_odds": {
+      "home": 1.95,
+      "draw": 3.58,
+      "away": 3.75,
+      "source": "avg_close"
     }
   },
   {
@@ -1027,14 +1087,20 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.464,
       "lambda_away": 1.498,
       "market_weight": 0.92,
       "odds_age_days": 1
+    },
+    "closing_odds": {
+      "home": 3.03,
+      "draw": 3.44,
+      "away": 2.26,
+      "source": "avg_close"
     }
   },
   {
@@ -1053,14 +1119,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-3",
+    "actual_ht": "0-3",
     "meta": {
       "model": "M5",
       "lambda_home": 1.191,
       "lambda_away": 1.524,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 3.99,
+      "draw": 3.43,
+      "away": 1.93,
+      "source": "avg_close"
     }
   },
   {
@@ -1079,14 +1151,20 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "5-2",
+    "actual_ht": "2-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.585,
       "lambda_away": 1.477,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 3.1,
+      "draw": 3.34,
+      "away": 2.27,
+      "source": "avg_close"
     }
   },
   {
@@ -1101,14 +1179,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.823,
       "lambda_away": 1.07,
       "market_weight": 0.0,
       "odds_age_days": null
+    },
+    "closing_odds": {
+      "home": 1.85,
+      "draw": 3.68,
+      "away": 4.02,
+      "source": "avg_close"
     }
   },
   {
@@ -1127,14 +1211,20 @@
     },
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "4-0",
+    "actual_ht": "3-0",
     "meta": {
       "model": "M5",
       "lambda_home": 2.442,
       "lambda_away": 0.893,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 1.09,
+      "draw": 10.72,
+      "away": 21.88,
+      "source": "avg_close"
     }
   },
   {
@@ -1153,14 +1243,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-1",
+    "actual_ht": "2-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.544,
       "lambda_away": 1.156,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 2.72,
+      "draw": 2.98,
+      "away": 2.82,
+      "source": "avg_close"
     }
   },
   {
@@ -1179,14 +1275,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-2",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.462,
       "lambda_away": 1.15,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 2.77,
+      "draw": 3.1,
+      "away": 2.65,
+      "source": "avg_close"
     }
   },
   {
@@ -1205,14 +1307,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.262,
       "lambda_away": 0.78,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 2.15,
+      "draw": 2.85,
+      "away": 4.08,
+      "source": "avg_close"
     }
   },
   {
@@ -1231,14 +1339,20 @@
     },
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "5-2",
+    "actual_ht": "2-1",
     "meta": {
       "model": "M5",
       "lambda_home": 2.663,
       "lambda_away": 0.925,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 1.1,
+      "draw": 10.44,
+      "away": 19.91,
+      "source": "avg_close"
     }
   },
   {
@@ -1257,14 +1371,20 @@
     },
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-2",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.224,
       "lambda_away": 1.51,
       "market_weight": 0.92,
       "odds_age_days": 1
+    },
+    "closing_odds": {
+      "home": 4.46,
+      "draw": 3.85,
+      "away": 1.73,
+      "source": "avg_close"
     }
   },
   {
@@ -1279,14 +1399,20 @@
     "market_probs": null,
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.503,
       "lambda_away": 1.677,
       "market_weight": 0.0,
       "odds_age_days": null
+    },
+    "closing_odds": {
+      "home": 3.76,
+      "draw": 3.8,
+      "away": 1.86,
+      "source": "avg_close"
     }
   },
   {
@@ -1305,14 +1431,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-3",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.459,
       "lambda_away": 0.855,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 2.16,
+      "draw": 3.28,
+      "away": 3.39,
+      "source": "avg_close"
     }
   },
   {
@@ -1331,14 +1463,20 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-2",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.735,
       "lambda_away": 1.027,
       "market_weight": 0.76,
       "odds_age_days": 2
+    },
+    "closing_odds": {
+      "home": 1.93,
+      "draw": 3.33,
+      "away": 4.1,
+      "source": "avg_close"
     }
   },
   {
@@ -1353,14 +1491,20 @@
     "market_probs": null,
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-2",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.346,
       "lambda_away": 1.349,
       "market_weight": 0.0,
       "odds_age_days": null
+    },
+    "closing_odds": {
+      "home": 2.42,
+      "draw": 3.35,
+      "away": 2.84,
+      "source": "avg_close"
     }
   },
   {
@@ -1375,14 +1519,20 @@
     "market_probs": null,
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 2.018,
       "lambda_away": 0.961,
       "market_weight": 0.0,
       "odds_age_days": null
+    },
+    "closing_odds": {
+      "home": 1.41,
+      "draw": 4.7,
+      "away": 7.21,
+      "source": "avg_close"
     }
   },
   {
@@ -1401,14 +1551,20 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.724,
       "lambda_away": 1.287,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 1.94,
+      "draw": 3.42,
+      "away": 3.94,
+      "source": "avg_close"
     }
   },
   {
@@ -1423,14 +1579,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-2",
+    "actual_ht": "2-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.874,
       "lambda_away": 1.282,
       "market_weight": 0.0,
       "odds_age_days": null
+    },
+    "closing_odds": {
+      "home": 1.35,
+      "draw": 5.22,
+      "away": 7.81,
+      "source": "avg_close"
     }
   },
   {
@@ -1449,14 +1611,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.987,
       "lambda_away": 1.646,
       "market_weight": 0.6,
       "odds_age_days": 3
+    },
+    "closing_odds": {
+      "home": 2.2,
+      "draw": 3.5,
+      "away": 3.13,
+      "source": "avg_close"
     }
   },
   {
@@ -1475,14 +1643,20 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-2",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.037,
       "lambda_away": 2.345,
       "market_weight": 0.28,
       "odds_age_days": 6
+    },
+    "closing_odds": {
+      "home": 4.86,
+      "draw": 4.34,
+      "away": 1.62,
+      "source": "avg_close"
     }
   },
   {
@@ -1501,14 +1675,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-2",
+    "actual_ht": "1-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.779,
       "lambda_away": 1.489,
       "market_weight": 0.28,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 2.12,
+      "draw": 3.64,
+      "away": 3.22,
+      "source": "avg_close"
     }
   },
   {
@@ -1527,14 +1707,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.763,
       "lambda_away": 1.075,
       "market_weight": 0.28,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.68,
+      "draw": 3.86,
+      "away": 4.89,
+      "source": "avg_close"
     }
   },
   {
@@ -1549,14 +1735,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.663,
       "lambda_away": 1.241,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.94,
+      "draw": 3.63,
+      "away": 3.73,
+      "source": "avg_close"
     }
   },
   {
@@ -1571,14 +1763,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-3",
+    "actual_ht": "2-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.469,
       "lambda_away": 1.287,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 2.16,
+      "draw": 3.39,
+      "away": 3.35,
+      "source": "avg_close"
     }
   },
   {
@@ -1593,14 +1791,20 @@
     "market_probs": null,
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 2.328,
       "lambda_away": 0.953,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.19,
+      "draw": 7.18,
+      "away": 12.96,
+      "source": "avg_close"
     }
   },
   {
@@ -1619,14 +1823,20 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.453,
       "lambda_away": 1.455,
       "market_weight": 0.28,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 3.92,
+      "draw": 3.59,
+      "away": 1.89,
+      "source": "avg_close"
     }
   },
   {
@@ -1645,14 +1855,20 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.561,
       "lambda_away": 1.245,
       "market_weight": 0.28,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 2.64,
+      "draw": 3.38,
+      "away": 2.61,
+      "source": "avg_close"
     }
   },
   {
@@ -1671,14 +1887,20 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-2",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.299,
       "lambda_away": 1.456,
       "market_weight": 0.28,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 3.65,
+      "draw": 3.82,
+      "away": 1.91,
+      "source": "avg_close"
     }
   },
   {
@@ -1697,14 +1919,20 @@
     },
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 2.064,
       "lambda_away": 0.936,
       "market_weight": 0.28,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 1.7,
+      "draw": 3.85,
+      "away": 4.74,
+      "source": "avg_close"
     }
   },
   {
@@ -1719,14 +1947,20 @@
     "market_probs": null,
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.408,
       "lambda_away": 1.603,
       "market_weight": 0.0,
       "odds_age_days": 6
+    },
+    "closing_odds": {
+      "home": 5.87,
+      "draw": 5.0,
+      "away": 1.44,
+      "source": "avg_close"
     }
   },
   {
@@ -1741,14 +1975,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.435,
       "lambda_away": 1.299,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 2.7,
+      "draw": 3.31,
+      "away": 2.56,
+      "source": "avg_close"
     }
   },
   {
@@ -1763,14 +2003,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-2",
+    "actual_ht": "2-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.583,
       "lambda_away": 1.071,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.96,
+      "draw": 3.62,
+      "away": 3.65,
+      "source": "avg_close"
     }
   },
   {
@@ -1785,14 +2031,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-3",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 2.171,
       "lambda_away": 1.111,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.44,
+      "draw": 4.67,
+      "away": 6.7,
+      "source": "avg_close"
     }
   },
   {
@@ -1807,14 +2059,20 @@
     "market_probs": null,
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-5",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.284,
       "lambda_away": 2.018,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 10.48,
+      "draw": 6.39,
+      "away": 1.24,
+      "source": "avg_close"
     }
   },
   {
@@ -1829,14 +2087,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "5-2",
+    "actual_ht": "2-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.447,
       "lambda_away": 1.07,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 2.2,
+      "draw": 3.11,
+      "away": 3.5,
+      "source": "avg_close"
     }
   },
   {
@@ -1851,14 +2115,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.782,
       "lambda_away": 1.268,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 2.41,
+      "draw": 3.29,
+      "away": 2.91,
+      "source": "avg_close"
     }
   },
   {
@@ -1873,14 +2143,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.45,
       "lambda_away": 1.039,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 2.3,
+      "draw": 3.16,
+      "away": 3.23,
+      "source": "avg_close"
     }
   },
   {
@@ -1895,14 +2171,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.096,
       "lambda_away": 1.004,
       "market_weight": 0.0,
       "odds_age_days": 9
+    },
+    "closing_odds": {
+      "home": 2.74,
+      "draw": 2.67,
+      "away": 3.06,
+      "source": "avg_close"
     }
   },
   {
@@ -1917,14 +2199,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-3",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.583,
       "lambda_away": 1.44,
       "market_weight": 0.0,
       "odds_age_days": 9
+    },
+    "closing_odds": {
+      "home": 3.05,
+      "draw": 3.38,
+      "away": 2.26,
+      "source": "avg_close"
     }
   },
   {
@@ -1939,14 +2227,20 @@
     "market_probs": null,
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 1.145,
       "lambda_away": 1.211,
       "market_weight": 0.0,
       "odds_age_days": 5
+    },
+    "closing_odds": {
+      "home": 3.71,
+      "draw": 3.41,
+      "away": 2.01,
+      "source": "avg_close"
     }
   },
   {
@@ -1961,14 +2255,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-1",
+    "actual_ht": "2-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.807,
       "lambda_away": 0.993,
       "market_weight": 0.0,
       "odds_age_days": 6
+    },
+    "closing_odds": {
+      "home": 1.39,
+      "draw": 5.02,
+      "away": 6.92,
+      "source": "avg_close"
     }
   },
   {
@@ -1983,14 +2283,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-2",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "lambda_home": 2.468,
       "lambda_away": 1.163,
       "market_weight": 0.0,
       "odds_age_days": 6
+    },
+    "closing_odds": {
+      "home": 1.31,
+      "draw": 5.72,
+      "away": 7.93,
+      "source": "avg_close"
     }
   },
   {
@@ -2005,14 +2311,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.612,
       "lambda_away": 1.274,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.65,
+      "draw": 3.98,
+      "away": 4.91,
+      "source": "avg_close"
     }
   },
   {
@@ -2027,14 +2339,20 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-2",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "lambda_home": 1.408,
       "lambda_away": 1.326,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 2.85,
+      "draw": 3.21,
+      "away": 2.51,
+      "source": "avg_close"
     }
   },
   {
@@ -2049,14 +2367,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "lambda_home": 2.149,
       "lambda_away": 1.044,
       "market_weight": 0.0,
       "odds_age_days": 7
+    },
+    "closing_odds": {
+      "home": 1.51,
+      "draw": 4.37,
+      "away": 5.82,
+      "source": "avg_close"
     }
   },
   {
@@ -2071,14 +2395,20 @@
     "market_probs": null,
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-6",
+    "actual_ht": "1-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.258,
       "lambda_away": 1.588,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 2.76,
+      "draw": 3.42,
+      "away": 2.45,
+      "source": "avg_close"
     }
   },
   {
@@ -2093,14 +2423,20 @@
     "market_probs": null,
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-2",
+    "actual_ht": "1-2",
     "meta": {
       "model": "M5",
       "lambda_home": 1.162,
       "lambda_away": 1.623,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 4.41,
+      "draw": 4.0,
+      "away": 1.7,
+      "source": "avg_close"
     }
   },
   {
@@ -2115,14 +2451,20 @@
     "market_probs": null,
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-3",
+    "actual_ht": "1-2",
     "meta": {
       "model": "M5",
       "lambda_home": 2.149,
       "lambda_away": 1.273,
       "market_weight": 0.0,
       "odds_age_days": 8
+    },
+    "closing_odds": {
+      "home": 1.87,
+      "draw": 3.75,
+      "away": 3.83,
+      "source": "avg_close"
     }
   },
   {

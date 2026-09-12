@@ -1,13 +1,14 @@
 # Monitoring de production — calibration mensuelle
 
-Journal : `data/production_journal.json` — 28 prédiction(s) réglée(s), 1 mois. Référence Brier hasard = 0.6667 (plus bas = mieux). « Δ vs marché » = écart **relatif** (Brier − Brier marché) / Brier marché, même échelle que le backtest (M3.5 : +1,78 % du marché).
+Journal : `data/production_journal.json` — 85 prédiction(s) réglée(s), 2 mois. Référence Brier hasard = 0.6667 (plus bas = mieux). « Δ vs marché » = écart **relatif** (Brier − Brier marché) / Brier marché, même échelle que le backtest (M3.5 : +1,78 % du marché).
 
 ## Par mois
 
 | Mois | n | Brier | Brier marché | Δ vs marché | IC 95 % du Δ | RPS | Issue OK | Score exact | Nuls prédits/obs |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-08 | 28 | 0.5214 | 0.5187 | +0.54 % | [-2.62 ; +3.68 %] | 0.1632 | 61% | 7% | 24% / 29% |
-| **Total** | 28 | 0.5214 | 0.5187 | +0.54 % | [-2.62 ; +3.68 %] | 0.1632 | 61% | 7% | 24% / 29% |
+| 2026-08 | 56 | 0.5702 | 0.5795 | -1.60 % | [-4.40 ; +0.38 %] | 0.1934 | 52% | 9% | 24% / 25% |
+| 2026-09 | 29 | 0.6711 | 0.6827 | -1.71 % | [-9.21 ; -0.50 %] | 0.2229 | 38% | 7% | 24% / 34% |
+| **Total** | 85 | 0.6046 | 0.5922 | +2.10 % | [-4.36 ; -0.21 %] | 0.2035 | 47% | 8% | 24% / 28% |
 
 L'IC 95 % est un bootstrap **apparié** (10000 rééchantillonnages de matchs, graine 20260909 pour que le rapport se régénère à l'identique) : modèle et marché sont notés sur les mêmes matchs, on rééchantillonne donc les matchs, pas deux séries indépendantes. Un intervalle qui contient 0 veut dire que le mois ne permet pas de distinguer le FINAL du marché — c'est le cas normal sur quelques dizaines de matchs, et la raison pour laquelle un Δ mensuel isolé ne justifie jamais de toucher aux réglages figés.
 
@@ -17,9 +18,10 @@ Découpage sur `meta.odds_age_days` aux seuils du pont marché/modèle (`market_
 
 | Fraîcheur | n | Brier | Brier marché | Δ vs marché | IC 95 % du Δ | Lecture |
 | --- | --- | --- | --- | --- | --- | --- |
-| Fraîches (≤ 1 j, poids marché 92%) | 5 | 0.3135 | 0.3108 | — | — | indicative (n < 15) |
-| Intermédiaires (2–4 j, poids dégressif) | 22 | 0.5872 | 0.5837 | +0.60 % | [-3.02 ; +4.22 %] | exploitable |
-| Périmées (≥ 5 j, poids marché 28%) | 1 | 0.1147 | 0.1275 | — | — | indicative (n < 15) |
+| Fraîches (≤ 1 j, poids marché 92%) | 9 | 0.4619 | 0.4651 | — | — | indicative (n < 15) |
+| Intermédiaires (2–4 j, poids dégressif) | 40 | 0.6037 | 0.6165 | -2.08 % | [-4.94 ; +0.58 %] | exploitable |
+| Périmées (≥ 5 j, poids marché 28%) | 30 | 0.6525 | 0.6133 | — | — | indicative (8 match(s) avec cotes) |
+| Fraîcheur non renseignée (hors barème) | 6 | 0.5852 | — | — | — | indicative (n < 15) |
 
 - Comparaison périmées vs fraîches indisponible : il faut n ≥ 15 avec cotes dans LES DEUX buckets.
 
@@ -35,7 +37,8 @@ Aucun pari réglé sur la période : soit les prédictions n'avaient pas de cote
 
 Aucun pari réglé avec clôture sharp connue : soit aucun pari théorique n'a encore de résultat, soit la clôture sharp manquait pour ces matchs.
 
-## Focus 2026-08
+## Focus 2026-09
 
-- 28 match(s) réglé(s), Brier 0.5214, issues correctes 61%, scores exacts 7%.
-- FINAL vs marché (28 match(s) avec cotes) : Brier 0.5214 vs 0.5187 → équivalent au marché.
+- 29 match(s) réglé(s), Brier 0.6711, issues correctes 38%, scores exacts 7%.
+- ⚠ Nuls : le modèle sous-estime les nuls (24% prédits vs 34% observés).
+- FINAL vs marché (7 match(s) avec cotes) : Brier 0.6711 vs 0.6827 → échantillon trop petit pour trancher.
