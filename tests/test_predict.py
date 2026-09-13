@@ -1292,6 +1292,138 @@ class TestDevigIntegration(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())[0]["meta"]["devig"], "shin")
 
 
+class TestClvProvisional(unittest.TestCase):
+    """CLV provisoire (roadmap A2/R1) : proxy book_odds, SÉPARÉ du CLV sharp."""
+
+    def _snapshot_row(self, **overrides):
+        row = {"fetched_at": "2026-09-13T10:00:00+00:00", "league": "E0",
+              "commence_time": "2026-09-14T14:00:00Z", "home": "Leeds",
+              "away": "Newcastle", "book": "pinnacle", "market": "h2h",
+              "outcome": "home", "point": None, "price": 4.5}
+        row.update(overrides)
+        return row
+
+    def test_settle_entry_computes_provisional_clv_independently_of_sharp(self):
+        entry = {"bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}]}
+        predict.settle_entry(entry, "1-2", provisional_odds={"home": 4.5, "draw": 3.4, "away": 1.9})
+        bet = entry["bets"][0]
+        self.assertAlmostEqual(bet["clv_pct_provisional"], 5.1 / 4.5 - 1.0, places=6)
+        self.assertNotIn("clv_pct", bet)
+
+    def test_provisional_and_sharp_clv_are_distinct_fields(self):
+        entry = {"bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}]}
+        closing = {"home": 4.8, "draw": 3.4, "away": 1.9, "source": "pinnacle_close"}
+        predict.settle_entry(entry, "1-2", closing_odds=closing,
+                             provisional_odds={"home": 4.5, "draw": 3.4, "away": 1.9})
+        bet = entry["bets"][0]
+        self.assertAlmostEqual(bet["clv_pct"], 5.1 / 4.8 - 1.0, places=6)
+        self.assertAlmostEqual(bet["clv_pct_provisional"], 5.1 / 4.5 - 1.0, places=6)
+        self.assertNotEqual(bet["clv_pct"], bet["clv_pct_provisional"])
+
+    def test_provisional_clv_never_recomputed_once_set(self):
+        entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01,
+                           "clv_pct_provisional": 0.05}]}
+        predict.settle_entry(entry, "1-0", provisional_odds={"home": 9.9})
+        self.assertEqual(entry["bets"][0]["clv_pct_provisional"], 0.05)
+
+    def test_no_provisional_odds_leaves_field_absent(self):
+        entry = {"bets": [{"issue": "home", "odds": 2.2, "stake_pct": 0.01}]}
+        predict.settle_entry(entry, "1-0")
+        self.assertNotIn("clv_pct_provisional", entry["bets"][0])
+
+    def test_missing_issue_in_provisional_odds_leaves_field_absent(self):
+        entry = {"bets": [{"issue": "draw", "odds": 3.4, "stake_pct": 0.01}]}
+        predict.settle_entry(entry, "1-0", provisional_odds={"home": 2.0, "away": 3.5})
+        self.assertNotIn("clv_pct_provisional", entry["bets"][0])
+
+    def test_latest_pinnacle_snapshot_picks_most_recent_before_kickoff(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.8), ("draw", 3.6), ("away", 1.85)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-12T09:00:00+00:00", outcome=outcome, price=price))
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-13T18:00:00+00:00", outcome=outcome, price=price))
+        conn.commit()
+        prices = predict.latest_pinnacle_snapshot(conn, "E0", "Leeds", "Newcastle")
+        self.assertEqual(prices, {"home": 4.5, "draw": 3.5, "away": 1.9})
+        conn.close()
+
+    def test_latest_pinnacle_snapshot_ignores_snapshots_after_kickoff(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.8), ("draw", 3.6), ("away", 1.85)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-12T09:00:00+00:00", outcome=outcome, price=price))
+        # snapshot pris APRÈS le coup d'envoi (commence_time 2026-09-14T14:00:00Z) : ignoré
+        for outcome, price in [("home", 1.5), ("draw", 4.0), ("away", 6.0)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-14T15:00:00+00:00", outcome=outcome, price=price))
+        conn.commit()
+        prices = predict.latest_pinnacle_snapshot(conn, "E0", "Leeds", "Newcastle")
+        self.assertEqual(prices, {"home": 4.8, "draw": 3.6, "away": 1.85})
+        conn.close()
+
+    def test_latest_pinnacle_snapshot_returns_none_without_data(self):
+        conn = db.connect(":memory:")
+        self.assertIsNone(predict.latest_pinnacle_snapshot(conn, "E0", "Leeds", "Newcastle"))
+        conn.close()
+
+    def test_sync_results_fills_provisional_clv_from_book_odds(self):
+        conn = db.connect(":memory:")
+        db.upsert_match(conn, {"date": "2026-09-14", "league": "E0", "season": "2627",
+                               "home": "Leeds", "away": "Newcastle", "fthg": 1, "ftag": 2})
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(outcome=outcome, price=price))
+        conn.commit()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                 "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                 "predicted_score": "1-2",
+                 "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05}],
+                 "actual_score": None, "actual_ht": None,
+                 "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}]))
+            synced, _ = predict.sync_results(conn, path, as_of=datetime.date(2026, 9, 20))
+            self.assertAlmostEqual(synced[0]["bets_clv_provisional"][0], 5.1 / 4.5 - 1.0, places=6)
+            entry = json.loads(path.read_text())[0]
+            self.assertAlmostEqual(entry["bets"][0]["clv_pct_provisional"], 5.1 / 4.5 - 1.0, places=6)
+            # Pas de clôture sharp en base pour ce match : clv_pct reste absent,
+            # clv_pct_provisional est bien renseigné malgré tout (indépendants).
+            self.assertNotIn("clv_pct", entry["bets"][0])
+        conn.close()
+
+    def test_clv_provisional_section_reports_average_with_warning(self):
+        settled = [{"bets": [{"issue": "home", "odds": 2.0, "stake_pct": 0.01,
+                              "clv_pct_provisional": 0.02}]}]
+        text = "\n".join(predict.clv_provisional_section(settled))
+        self.assertIn("## CLV provisoire", text)
+        self.assertIn("1 pari(s) avec snapshot Pinnacle provisoire", text)
+        self.assertIn("Ne sert à aucune décision du protocole Gate", text)
+
+    def test_clv_provisional_section_without_any_data(self):
+        text = "\n".join(predict.clv_provisional_section([{"bets": []}]))
+        self.assertIn("Aucun pari réglé avec un snapshot Pinnacle", text)
+
+    def test_report_includes_separate_clv_and_provisional_sections(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            entry = {
+                "match": "A-B", "date": "2026-08-15", "competition": "E0",
+                "probs": {"home": 0.55, "draw": 0.25, "away": 0.20},
+                "predicted_score": "2-1",
+                "bets": [{"issue": "home", "odds": 2.0, "stake_pct": 0.01,
+                          "clv_pct": 0.03, "clv_pct_provisional": -0.01}],
+                "actual_score": "2-1", "actual_ht": None,
+                "meta": {"model": "M5"},
+            }
+            path.write_text(json.dumps([entry]))
+            text, _ = predict.build_calibration_report(path)
+            self.assertIn("## CLV (closing line value)", text)
+            self.assertIn("## CLV provisoire", text)
+            self.assertLess(text.index("## CLV (closing line value)"), text.index("## CLV provisoire"))
+
+
 class TestClvRequiresSharpClosing(unittest.TestCase):
     """Le CLV n'a de sens que contre une vraie clôture sharp (Pinnacle)."""
 

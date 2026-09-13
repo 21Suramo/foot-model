@@ -1092,13 +1092,47 @@ def clv_source_ok(closing_odds):
     return True, None
 
 
-def settle_entry(entry, actual, actual_ht=None, closing_odds=None):
+# --- CLV provisoire (roadmap A2/R1) -----------------------------------------
+#
+# Constat : aucun pari théorique réglé n'a de clôture sharp avant la fin de
+# saison (football-data.co.uk publie ses clôtures avec des mois de retard),
+# donc le protocole Gate n=50/n=100 (CLAUDE.md) reste structurellement
+# bloqué tant qu'une saison est en cours. `book_odds` (roadmap A2) contient
+# déjà des snapshots Pinnacle capturés à la main via `odds_snapshot.py` — pas
+# une vraie clôture (rien ne garantit qu'un snapshot ait été pris juste avant
+# le coup d'envoi), mais le meilleur proxy disponible en cours de saison.
+
+def latest_pinnacle_snapshot(conn, league, home, away):
+    """Dernier snapshot Pinnacle h2h de `book_odds` AVANT le coup d'envoi.
+
+    book_odds.commence_time (posé par odds_snapshot.py depuis l'API) sert de
+    référence : on ne retient que les snapshots dont fetched_at <= commence_time
+    (un snapshot pris après coup d'envoi mesurerait autre chose), puis le plus
+    récent d'entre eux. Renvoie None si aucun snapshot Pinnacle exploitable
+    n'existe pour ce match (odds_snapshot.py n'a jamais tourné dessus, par
+    exemple) — jamais une valeur partielle ou devinée."""
+    rows = conn.execute(
+        "SELECT outcome, price, fetched_at FROM book_odds "
+        "WHERE league = ? AND home = ? AND away = ? AND book = 'pinnacle' "
+        "AND market = 'h2h' AND fetched_at <= commence_time "
+        "ORDER BY fetched_at DESC",
+        (league, home, away)).fetchall()
+    if not rows:
+        return None
+    latest_fetch = rows[0]["fetched_at"]
+    prices = {r["outcome"]: r["price"] for r in rows if r["fetched_at"] == latest_fetch}
+    return prices if all(k in prices for k in ISSUES) else None
+
+
+def settle_entry(entry, actual, actual_ht=None, closing_odds=None, provisional_odds=None):
     """Pose le résultat réel sur une entrée et règle ses paris théoriques.
 
     Un pari déjà réglé (champ `realized_pct` présent) n'est jamais recalculé —
     le P&L d'un match est figé une fois posé. Idem pour `clv_pct` : une fois
     posé il ne bouge plus, même si settle_entry est rappelé sans closing_odds
-    (ex: `record_result` manuel, qui n'a pas accès à football.db).
+    (ex: `record_result` manuel, qui n'a pas accès à football.db). Même
+    discipline pour `clv_pct_provisional` (roadmap A2/R1, indépendante de
+    `clv_pct` — voir plus bas).
 
     closing_odds, quand fourni (par sync_results, seul appelant qui a accès à
     la base), est {"home":.., "draw":.., "away":.., "source":..} — les cotes
@@ -1113,6 +1147,16 @@ def settle_entry(entry, actual, actual_ht=None, closing_odds=None):
     reste hors de la statistique CLV : mieux vaut un échantillon plus petit mais
     homogène qu'un chiffre qui mélange clôtures sharp, moyennes de books et
     ouvertures sous une même étiquette.
+
+    provisional_odds (roadmap A2/R1), quand fourni, est {"home":.., "draw":..,
+    "away":..} — le dernier snapshot Pinnacle de `book_odds` capturé avant le
+    coup d'envoi (voir `latest_pinnacle_snapshot`). Ce n'est PAS une clôture :
+    football-data.co.uk ne publie ses vraies clôtures qu'avec des mois de
+    retard en fin de saison, ce qui rend `clv_pct` structurellement vide tant
+    qu'une saison n'est pas terminée. `clv_pct_provisional` comble ce trou en
+    attendant, dans un champ SÉPARÉ, jamais mélangé à `clv_pct` et jamais
+    utilisé par le protocole Gate n=50/n=100 (cf. CLAUDE.md) : un proxy pour
+    repérer une dérive grossière, pas une mesure d'edge.
     """
     entry["actual_score"] = actual
     entry["actual_ht"] = actual_ht
@@ -1125,15 +1169,17 @@ def settle_entry(entry, actual, actual_ht=None, closing_odds=None):
             stake, odds = float(bet["stake_pct"]), float(bet["odds"])
             gain = stake * (odds - 1.0) if bet["issue"] == winner else -stake
             bet["realized_pct"] = round(gain, 6)
-        if "clv_pct" in bet:
-            continue
-        if sharp_ok and closing_odds.get(bet["issue"]):
-            bet["clv_pct"] = round(float(bet["odds"]) / float(closing_odds[bet["issue"]]) - 1.0, 6)
-            bet.pop("clv_skipped", None)
-        else:
-            # issue absente d'un bloc pourtant sharp : la clôture manque pour
-            # CETTE issue, ce qui est bien un défaut de clôture.
-            bet["clv_skipped"] = skip_reason or "no_closing_odds"
+        if "clv_pct" not in bet:
+            if sharp_ok and closing_odds.get(bet["issue"]):
+                bet["clv_pct"] = round(float(bet["odds"]) / float(closing_odds[bet["issue"]]) - 1.0, 6)
+                bet.pop("clv_skipped", None)
+            else:
+                # issue absente d'un bloc pourtant sharp : la clôture manque pour
+                # CETTE issue, ce qui est bien un défaut de clôture.
+                bet["clv_skipped"] = skip_reason or "no_closing_odds"
+        if "clv_pct_provisional" not in bet and provisional_odds and provisional_odds.get(bet["issue"]):
+            bet["clv_pct_provisional"] = round(
+                float(bet["odds"]) / float(provisional_odds[bet["issue"]]) - 1.0, 6)
     return entry
 
 
@@ -1251,11 +1297,14 @@ def sync_results(conn, path, as_of=None):
         if row["odds_h"] is not None and row["odds_d"] is not None and row["odds_a"] is not None:
             closing = {"home": row["odds_h"], "draw": row["odds_d"], "away": row["odds_a"],
                       "source": row["odds_source"]}
-        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht, closing)
+        provisional = latest_pinnacle_snapshot(conn, league, pair[0], pair[1])
+        settle_entry(e, f"{row['fthg']}-{row['ftag']}", actual_ht, closing, provisional)
         bets = e.get("bets") or []
         synced.append({"match": e["match"], "date": e["date"],
                        "actual": f"{row['fthg']}-{row['ftag']}", "shift": shift,
                        "bets_clv": [b["clv_pct"] for b in bets if "clv_pct" in b],
+                       "bets_clv_provisional": [b["clv_pct_provisional"] for b in bets
+                                                 if "clv_pct_provisional" in b],
                        "clv_skipped": [b["clv_skipped"] for b in bets
                                        if "clv_pct" not in b and b.get("clv_skipped")],
                        "closing_source": (closing or {}).get("source")})
@@ -1621,6 +1670,60 @@ def _clv_skipped_lines(skipped):
     return lines
 
 
+# --- CLV provisoire (roadmap A2/R1) : section séparée, jamais mélangée -----
+
+def clv_provisional_values(settled):
+    """CLV provisoire de chaque pari réglé dont un snapshot Pinnacle pré-match existe."""
+    return [float(b["clv_pct_provisional"]) for e in settled for b in (e.get("bets") or [])
+            if "clv_pct_provisional" in b]
+
+
+def clv_provisional_summary(settled):
+    vals = clv_provisional_values(settled)
+    if not vals:
+        return 0, None, None
+    n = len(vals)
+    return n, sum(vals) / n, sum(1 for v in vals if v > 0) / n
+
+
+def clv_provisional_section(settled):
+    """Lignes markdown de la section « CLV provisoire (R1) » — SÉPARÉE du CLV
+    sharp ci-dessus, jamais fusionnée avec lui."""
+    n, avg, positive = clv_provisional_summary(settled)
+    lines = ["## CLV provisoire (R1 — proxy book_odds, PAS le CLV sharp)", "",
+             "⚠️ **Ne sert à aucune décision du protocole Gate n=50/n=100** "
+             "(section « Protocole de revue CLV » de CLAUDE.md) : c'est un "
+             "proxy, pas une clôture. Constat à l'origine de cette section : "
+             "football-data.co.uk ne publie ses cotes de clôture Pinnacle "
+             "qu'avec des mois de retard, une fois la saison terminée — aucun "
+             "pari théorique réglé en cours de saison n'a donc de `clv_pct` "
+             "sharp, ce qui bloque structurellement le protocole Gate tant "
+             "que la saison n'est pas close. `clv_pct_provisional` compare "
+             "plutôt la cote prise au dernier snapshot Pinnacle capturé dans "
+             "`book_odds` (roadmap A2, `odds_snapshot.py`) avant le coup "
+             "d'envoi — un book réel et sharp, mais un instantané pris à un "
+             "moment quelconque avant le match, pas la clôture elle-même. "
+             "Sert uniquement à repérer une **dérive grossière** entre la "
+             "cote prise et le marché ; ne mesure PAS un edge et ne doit "
+             "jamais remplacer le CLV sharp dans une décision de mise ou de "
+             "revue de protocole.",
+             ""]
+    if not n:
+        lines += ["Aucun pari réglé avec un snapshot Pinnacle antérieur au "
+                  "coup d'envoi en base : soit `odds_snapshot.py` n'a pas "
+                  "tourné sur ces matchs, soit aucun snapshot n'a été capturé "
+                  "avant le coup d'envoi.", ""]
+        return lines
+    _, lo, hi = bootstrap.ci_mean(clv_provisional_values(settled))
+    ci_txt = f" — IC 95 % {bootstrap.fmt_ci(lo * 100, hi * 100)}" if lo is not None else ""
+    lines += [f"- {n} pari(s) avec snapshot Pinnacle provisoire — CLV provisoire "
+              f"moyen {avg:+.2%}, positif sur {positive:.0%} des paris{ci_txt}."]
+    if n < CLV_MIN_BETS:
+        lines.append(f"- ⚠ {n} pari(s) (< {CLV_MIN_BETS}) : lecture indicative.")
+    lines.append("")
+    return lines
+
+
 def build_calibration_report(path, month_filter=None):
     settled = [e for e in load_journal(path) if e.get("actual_score")]
     if month_filter:
@@ -1671,6 +1774,7 @@ def build_calibration_report(path, month_filter=None):
     lines += freshness_section(settled)
     lines += roi_section(settled)
     lines += clv_section(settled)
+    lines += clv_provisional_section(settled)
 
     # Focus sur le dernier mois (ou le mois filtré)
     focus = month_filter or sorted(by_month)[-1]
@@ -1887,6 +1991,9 @@ def cmd_sync_results(args, conn):
         for reason in s.get("clv_skipped") or []:
             print(f"        CLV non calculé — {CLV_SKIP_REASONS.get(reason, reason)}"
                   + (f" (source en base : {s['closing_source']})" if s.get("closing_source") else ""))
+        for clv in s.get("bets_clv_provisional") or []:
+            print(f"        CLV provisoire (R1, book_odds Pinnacle) {clv:+.2%} "
+                  f"— proxy, ne remplace pas le sharp ci-dessus")
     if pending:
         print("\nEn attente de données source :")
         for p in pending:

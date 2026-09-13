@@ -513,11 +513,20 @@ exactement ce que la discipline du projet interdit.
   automatisée (le script existe, rien ne le déclenche à intervalle régulier
   — câbler ça dans `.github/workflows/` suppose que l'utilisateur ajoute
   `ODDS_API_KEY` comme secret du dépôt ET choisisse une cadence dans le
-  budget ci-dessus, une décision qui lui revient) ; `predict.py` n'utilise
-  pas encore ces cotes (l'entrée `--odds` reste manuelle — dernière étape,
-  vient après que la capture + l'historique existent). Ne pas présenter A2
-  comme terminé : la coquille + son contenu (alias) sont là, l'automatisation
-  et l'intégration production ne le sont pas.
+  budget ci-dessus, une décision qui lui revient) ; l'entrée `--odds` de
+  `predict.py match` reste manuelle (la génération de prédiction ne lit pas
+  `book_odds`). Ne pas présenter A2 comme terminé : la coquille + son
+  contenu (alias) sont là, l'automatisation et l'intégration production à la
+  génération de prédiction ne le sont pas.
+
+  **Exception (R1, 2026-09-13)** : `predict.py sync-results` lit désormais
+  `book_odds` pour UN usage étroit et distinct — poser `clv_pct_provisional`
+  (voir section « Protocole de revue CLV » ci-dessous) — parce que
+  `matches.odds_*` reste vide pour les matchs de la saison en cours et que
+  le CLV sharp est donc structurellement à l'arrêt jusqu'à la fin de saison.
+  Ça ne change rien au constat ci-dessus : c'est un usage de lecture
+  ponctuel côté monitoring, pas l'intégration production de `book_odds` dans
+  la génération de prédiction que A2 vise à terme.
 - **C2 (fractionnement books/limites) : le point d'ancrage existe déjà.**
   `--exposure-cap` (M7/M9 ci-dessus) est bien, comme le document le note
   lui-même, « le bon endroit » pour des limites par book — mais rien à y
@@ -730,6 +739,15 @@ python -m unittest discover -s tests # tests unitaires
   (par mois et par bucket) est publié avec son IC bootstrap apparié. La colonne « Δ vs marché » des deux premières tables
   est un écart **relatif** — même formule que « Écart rel. marché » de
   `report35.py` — donc directement comparable au +1,78 % du backtest.
+  **CLV provisoire (R1, 2026-09-13)** : `sync-results` pose en plus
+  `bets[].clv_pct_provisional`, un second champ indépendant du `clv_pct`
+  sharp — l'écart entre la cote prise et le dernier snapshot Pinnacle de
+  `book_odds` (roadmap A2) antérieur au coup d'envoi
+  (`latest_pinnacle_snapshot`). Section « CLV provisoire » séparée du
+  rapport, jamais fusionnée avec la section CLV sharp : sert uniquement à
+  détecter une dérive grossière tant que `matches.odds_*` reste vide en
+  cours de saison (voir section « Protocole de revue CLV » plus bas), ne
+  sert à aucune décision du protocole Gate n=50/n=100.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
@@ -789,6 +807,11 @@ python -m unittest discover -s tests # tests unitaires
   `requirements.txt`, lance `python -m unittest discover -s tests` puis
   `python check.py` ; échoue si l'un des deux retourne un code non nul.
   Pas de secret réseau requis (fixtures locales, `football.db` versionnée).
+  Vérifié le 2026-09-13 : `pip install -r requirements.txt` installe déjà
+  les versions exactes du fichier (numpy 2.4.6, pandas 3.0.5, scipy 1.17.1,
+  requests 2.33.1), confirmé à la fois par le run CI réel sur `main` et par
+  une reproduction locale — pas de divergence CI/prod à corriger ici, malgré
+  un audit antérieur qui en signalait une.
 - `.github/workflows/weekly.yml` — automatise la partie « lundi suivant »
   de la routine de suivi ci-dessous : `pipeline.py --update` puis
   `predict.py sync-results` puis `predict.py report`, commit+push de
@@ -848,13 +871,48 @@ la source ne sont pas des erreurs).
 Filtre : paris réglés avec `odds_source = pinnacle_close` uniquement
 (clv_skipped exclus, cf. section CLV).
 
-- **Estimations de calendrier (rythme actuel ~4–5 paris Pinnacle / semaine) :**
-  - n = 50 : cible indicative fin octobre 2026
-  - n = 100 : cible indicative mi-février 2027
+- **Estimations de calendrier — révisées le 2026-09-13 (R1, voir note
+  ci-dessous) :**
+  - n = 50 : cible indicative mai 2027
+  - n = 100 : cible indicative décembre 2027
   - Ces dates sont indicatives seulement. Le gate est le compteur réel de
     paris `pinnacle_close` réglés dans le journal, pas la date : si n=100
     est atteint avant ou après la cible, c'est le n réel qui déclenche la
     revue, jamais le calendrier.
+
+  **Note R1 (2026-09-13)** : les cibles initiales (fin octobre 2026 /
+  mi-février 2027) supposaient ~4–5 paris `pinnacle_close` réglés par
+  semaine. Constat en production (`reports/production_calibration.md`,
+  section CLV) : **0 pari réglé n'a de clôture sharp à ce jour** — pas
+  seulement une clôture non-sharp (`source_not_sharp`), mais `odds_*` NULL
+  en base pour la totalité des 8 paris réglés (`no_closing_odds`).
+  football-data.co.uk ne publie ses clôtures Pinnacle qu'avec des mois de
+  retard, une fois la saison en cours terminée — le protocole Gate n=50/n=100
+  est donc structurellement à l'arrêt tant que la saison 2627 n'est pas
+  close, pas seulement plus lent que prévu. D'où les nouvelles cibles
+  (dérivées de la fin de saison plutôt que d'un rythme hebdomadaire de
+  paris) et l'introduction d'un **CLV provisoire (R1)** comme palliatif de
+  surveillance — jamais comme substitut au protocole ci-dessous.
+
+  **CLV provisoire (R1) : `bets[].clv_pct_provisional`, section séparée du
+  rapport.** Puisque `matches.odds_*` reste vide pour les matchs de la
+  saison en cours, `predict.py sync-results` pose en parallèle un second
+  champ, indépendant de `clv_pct` : l'écart entre la cote prise et le
+  dernier snapshot Pinnacle de `book_odds` (roadmap A2, capturé par
+  `odds_snapshot.py`) antérieur au coup d'envoi
+  (`predict.latest_pinnacle_snapshot`). Ce n'est PAS une clôture — rien ne
+  garantit qu'un snapshot ait été pris juste avant le match, seulement que
+  c'est le plus récent disponible avant celui-ci. `reports/production_calibration.md`
+  publie une section « CLV provisoire (R1) » entièrement séparée de la
+  section CLV sharp, avec un avertissement explicite : ce chiffre ne sert à
+  AUCUNE décision du protocole Gate (ni le checkpoint n=50, ni la décision
+  n=100 ci-dessous), il sert uniquement à repérer une dérive grossière entre
+  cote prise et marché en attendant que la clôture sharp existe. Testé :
+  `tests/test_predict.py::TestClvProvisional` (dont
+  `test_provisional_and_sharp_clv_are_distinct_fields`, qui vérifie
+  explicitement que `clv_pct` et `clv_pct_provisional` restent deux champs
+  distincts et jamais confondus). N'affecte pas `clv_pct` ni le protocole
+  ci-dessous : à ne jamais utiliser pour une décision de mise ou de gate.
 
 - **n = 50 — checkpoint informatif.**
   Vérifier uniquement :
@@ -891,6 +949,36 @@ d'échantillon), mais le n=100 n'a plus à « rouvrir » C1 au sens strict :
 il sert plutôt de revalidation indépendante, sur données réelles de
 production, d'un verdict déjà rendu sur données historiques — à traiter
 comme telle plutôt que comme une question encore ouverte.
+
+## À surveiller (revue du 2026-09-13, R4)
+
+Signaux de production à observer sans y toucher — ni re-réglage, ni action
+corrective — tant qu'ils restent isolés. Section volontairement séparée de
+« Critères d'arrêt » : ce ne sont pas des verdicts fermés, seulement des
+points sous surveillance.
+
+- **Δ vs marché en production : −0,59 % [IC 95 % −4,02 ; −0,02 %]
+  (`reports/production_calibration.md`, ligne Total, 104 paris réglés).**
+  Négatif, mais l'IC exclut 0 de justesse (borne haute à −0,02) : ce n'est
+  ni un edge démontré (le point est négatif) ni du bruit pur (l'IC exclut
+  bien 0) — un signal à surveiller, pas à célébrer, et surtout pas un motif
+  pour toucher aux hyperparamètres figés (M3.5/A1/C1, cf. non-goals). Sur un
+  échantillon de production de cette taille, un IC qui frôle 0 dans un sens
+  ou l'autre est attendu — le relire au prochain rapport mensuel avant d'en
+  tirer une conclusion.
+- **Sous-estimation des nuls en septembre 2026 : 24 % prédits vs 40 %
+  observés** (`reports/production_calibration.md`, Focus 2026-09) — plus
+  significatif que l'agrégat ci-dessus parce que c'est un biais directionnel
+  net (le modèle prédit systématiquement moins de nuls qu'il n'en survient),
+  pas juste un écart de Brier global. Le mois d'août ne montre pas le même
+  écart (24 % / 26 %), donc rien ne dit encore si c'est un vrai biais
+  structurel ou une fluctuation d'un mois à faible échantillon (47 matchs).
+- **Action tant que ça reste isolé à 1 mois : ne RIEN re-régler.** Si l'écart
+  persiste 2 à 3 mois consécutifs (prochains rapports : octobre, novembre
+  2026), ouvrir une investigation séparée avec le même protocole que
+  fatigue/M8 (diagnostic walk-forward AVANT toute calibration, jamais un
+  correctif improvisé sur la base d'un seul mois) plutôt que de modifier
+  `model.py` ou les réglages M3.5 figés à la volée.
 
 ## Conventions
 
