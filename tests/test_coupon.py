@@ -52,7 +52,8 @@ class TestCouponFiltersB3(unittest.TestCase):
         eligible, excluded = coupon.eligible_and_excluded(entries)
         self.assertEqual(eligible, [])
         self.assertEqual(len(excluded), 2)
-        self.assertTrue(all("faible historique" in r["reason"] for r in excluded))
+        self.assertTrue(all(any("faible historique" in r for r in row["reasons"])
+                            for row in excluded))
 
     def test_stale_odds_excluded_at_five_days(self):
         entries = [_entry("Leeds-Newcastle", "Leeds", "Newcastle",
@@ -60,11 +61,17 @@ class TestCouponFiltersB3(unittest.TestCase):
         eligible, excluded = coupon.eligible_and_excluded(entries)
         self.assertEqual(eligible, [])
         self.assertEqual(len(excluded), 1)
-        # Leeds est aussi faible historique : la raison rapportée doit être
-        # cohérente (peu importe laquelle prime, mais jamais les deux à la fois
-        # ni une omission silencieuse).
-        self.assertIn(excluded[0]["reason"],
-                      ["équipe à faible historique", "cote périmée (5 j ≥ 5)"])
+
+    def test_bet_excluded_for_both_reasons_reports_both(self):
+        # Leeds-Newcastle : Leeds est faible historique ET la cote a 5 jours —
+        # les deux raisons doivent apparaître, aucune ne doit être tue.
+        entries = [_entry("Leeds-Newcastle", "Leeds", "Newcastle",
+                          [_bet("home", stake_pct=0.05)], odds_age_days=5)]
+        _, excluded = coupon.eligible_and_excluded(entries)
+        reasons_text = " ".join(excluded[0]["reasons"])
+        self.assertIn("faible historique", reasons_text)
+        self.assertIn("cote périmée", reasons_text)
+        self.assertEqual(len(excluded[0]["reasons"]), 2)
 
     def test_four_days_old_is_not_stale(self):
         entries = [_entry("Arsenal-Chelsea", "Arsenal", "Chelsea",

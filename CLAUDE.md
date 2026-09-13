@@ -764,15 +764,22 @@ python -m unittest discover -s tests # tests unitaires
   cotes 1xbet lui-même (les cotes du journal viennent d'autres books) : ça
   reste une étape manuelle avant toute mise réelle.
 
-  **Rappel important (audit 2026-09-13) : le journal ne distingue pas
-  « suggéré par le modèle » de « réellement misé sur 1xbet ».** Toutes les
-  entrées de `bets` sont des paris théoriques (cf. M5.1 : « les mises n'ont
-  jamais été placées, elles sont recalculées depuis les cotes journalisées »)
-  — un pari qui reste dans le journal après un filtrage `coupon.py` n'est pas
-  un pari « annulé » ou une pollution, juste une suggestion que l'utilisateur
-  a choisi de ne pas suivre. Si un suivi séparé « réellement misé sur 1xbet »
-  devient utile, c'est un nouveau champ/chantier à décider explicitement, pas
-  quelque chose que ce script devine.
+  **Décision explicite (2026-09-13) : le journal reste 100 % théorique, le
+  suivi des paris réels sur 1xbet est volontairement HORS de ce dépôt.**
+  Question posée après l'audit du coupon (le journal ne distinguait pas
+  « suggéré par le modèle » de « réellement misé ») : ajouter un suivi réel
+  (`placed`/`placed_odds`/`placed_stake_eur`) ou séparer clairement les deux
+  usages ? Réponse de l'utilisateur : séparer, garder le journal théorique
+  pur. Donc `bets[]` reste et restera un outil de MESURE DU MODÈLE (CLV,
+  calibration, ROI théorique — cf. M5.1 : « les mises n'ont jamais été
+  placées, elles sont recalculées depuis les cotes journalisées ») ; le suivi
+  de ce que l'utilisateur mise réellement sur 1xbet (montants en euros, cote
+  réelle obtenue, limites du book) se fait ailleurs, à la main, et ne sera
+  PAS modélisé dans ce dépôt sauf nouvelle demande explicite. Un pari qui
+  reste dans le journal après un filtrage `coupon.py` n'est donc jamais une
+  pollution à nettoyer — c'est une suggestion théorique que l'utilisateur a
+  choisi de ne pas suivre, rien de plus. Ne pas rouvrir cette question sans
+  une nouvelle décision explicite de l'utilisateur.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
@@ -1004,6 +1011,24 @@ points sous surveillance.
   fatigue/M8 (diagnostic walk-forward AVANT toute calibration, jamais un
   correctif improvisé sur la base d'un seul mois) plutôt que de modifier
   `model.py` ou les réglages M3.5 figés à la volée.
+- **CLV provisoire (R1) : −6,19 % sur les 8 premiers paris backfillés — PAS
+  encore un signal, un défaut de méthode identifié le 2026-09-13.**
+  `book_odds` ne contient qu'**une seule capture** (`fetched_at
+  2026-09-10T10:04:09`, le test ponctuel d'A2) : `latest_pinnacle_snapshot`
+  compare donc les 8 paris au MÊME instant figé, pas à 8 clôtures
+  indépendantes — tant qu'`odds_snapshot.py` n'est pas relancé
+  régulièrement, ce n'est structurellement pas mesurable. Décomposition par
+  tranche de cote : les 3 jambes à cote ≥ 9,0 (Chelsea-Hull extérieur @10,56,
+  Real Madrid-Vallecano nul @9,0 et extérieur @16,0) moyennent −19,86 %, les
+  5 autres (cotes < 9,0) moyennent +2,00 %. Le négatif global vient presque
+  entièrement de 3 outsiders extrêmes — signature d'un effet de levier
+  mécanique en espace de cote (une petite variation de probabilité vraie
+  déplace beaucoup plus la cote décimale à 16,0 qu'à 1,84), pas forcément un
+  biais réel. **Ne pas republier ce chiffre comme edge ou comme alerte** tant
+  que (a) `odds_snapshot.py` n'a pas tourné plusieurs fois pour donner des
+  snapshots réellement indépendants par match, et (b) l'échantillon ne
+  sépare pas au moins favoris/outsiders. À revisiter une fois qu'il existe
+  plus d'une capture en base.
 
 ## Conventions
 

@@ -35,7 +35,10 @@ def eligible_and_excluded(entries):
     """(éligibles, exclus) parmi les paris théoriques non réglés du journal.
 
     Chaque élément est {match, date, issue, odds, stake_pct, odds_age_days}
-    (+ "reason" pour les exclus). N'agrège et ne recalcule aucune cote."""
+    (+ "reasons", liste, pour les exclus — un pari peut cumuler les deux
+    filtres, ex. Leeds-Newcastle : faible historique ET cote périmée, les
+    deux doivent apparaître sinon la raison affichée dépend arbitrairement de
+    l'ordre de vérification). N'agrège et ne recalcule aucune cote."""
     eligible, excluded = [], []
     for e in entries:
         if e.get("actual_score") is not None:
@@ -43,15 +46,17 @@ def eligible_and_excluded(entries):
         meta = e.get("meta") or {}
         age = meta.get("odds_age_days")
         home, away = meta.get("home"), meta.get("away")
-        low_history = bool({home, away} & LOW_HISTORY_TEAMS)
-        stale = age is not None and age >= STALE_ODDS_AGE_DAYS
+        reasons = []
+        low_history_teams = {home, away} & LOW_HISTORY_TEAMS
+        if low_history_teams:
+            reasons.append(f"équipe à faible historique ({', '.join(sorted(low_history_teams))})")
+        if age is not None and age >= STALE_ODDS_AGE_DAYS:
+            reasons.append(f"cote périmée ({age} j ≥ {STALE_ODDS_AGE_DAYS})")
         for bet in e.get("bets") or []:
             row = {"match": e["match"], "date": e["date"], "issue": bet["issue"],
                   "odds": bet["odds"], "stake_pct": bet["stake_pct"], "odds_age_days": age}
-            if low_history:
-                excluded.append({**row, "reason": "équipe à faible historique"})
-            elif stale:
-                excluded.append({**row, "reason": f"cote périmée ({age} j ≥ {STALE_ODDS_AGE_DAYS})"})
+            if reasons:
+                excluded.append({**row, "reasons": reasons})
             else:
                 eligible.append(row)
     return eligible, excluded
@@ -65,7 +70,10 @@ def main():
     entries = predict.load_journal(args.log)
     eligible, excluded = eligible_and_excluded(entries)
 
-    print("Coupon éligible (à recouper cote par cote sur 1xbet avant toute mise) :\n")
+    print("⚠️  Cotes issues du journal (pont marché/modèle, recherche web multi-books), "
+          "PAS des cotes 1xbet. Recouper CHAQUE cote sur 1xbet avant toute mise réelle — "
+          "un écart de cote change la mise Kelly attendue.\n")
+    print("Coupon éligible :\n")
     for r in sorted(eligible, key=lambda r: (r["date"], r["match"])):
         print(f"  {r['date']}  {r['match']:30s} {r['issue']:5s} "
               f"cote journal {r['odds']:.2f}  mise {r['stake_pct']:.2%}"
@@ -77,8 +85,8 @@ def main():
         print(f"\n{len(excluded)} pari(s) exclu(s) (filtres B3, restent dans le journal "
               f"comme suggestions théoriques du modèle — rien n'y est modifié) :")
         for r in sorted(excluded, key=lambda r: (r["date"], r["match"])):
-            print(f"  {r['date']}  {r['match']:30s} {r['issue']:5s} "
-                  f"mise {r['stake_pct']:.2%} — {r['reason']}")
+            print(f"  EXCLU — {r['date']}  {r['match']:30s} {r['issue']:5s} "
+                  f"mise {r['stake_pct']:.2%} — {' + '.join(r['reasons'])}")
 
 
 if __name__ == "__main__":
