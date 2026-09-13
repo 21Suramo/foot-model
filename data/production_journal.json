@@ -457,7 +457,7 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "2-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2486,10 +2486,12 @@
       {
         "issue": "home",
         "odds": 2.43,
-        "stake_pct": 0.001397
+        "stake_pct": 0.001397,
+        "realized_pct": -0.001397,
+        "clv_skipped": "no_closing_odds"
       }
     ],
-    "actual_score": null,
+    "actual_score": "2-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2517,7 +2519,7 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "1-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2548,15 +2550,19 @@
       {
         "issue": "draw",
         "odds": 5.88,
-        "stake_pct": 0.004361
+        "stake_pct": 0.004361,
+        "realized_pct": 0.021282,
+        "clv_skipped": "no_closing_odds"
       },
       {
         "issue": "away",
         "odds": 10.56,
-        "stake_pct": 0.015196
+        "stake_pct": 0.015196,
+        "realized_pct": -0.015196,
+        "clv_skipped": "no_closing_odds"
       }
     ],
-    "actual_score": null,
+    "actual_score": "2-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2587,10 +2593,12 @@
       {
         "issue": "home",
         "odds": 1.84,
-        "stake_pct": 0.015973
+        "stake_pct": 0.015973,
+        "realized_pct": -0.015973,
+        "clv_skipped": "no_closing_odds"
       }
     ],
-    "actual_score": null,
+    "actual_score": "2-3",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2618,7 +2626,7 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "0-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2646,7 +2654,7 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "0-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2674,7 +2682,7 @@
     },
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "0-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2805,7 +2813,7 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "1-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2836,10 +2844,12 @@
       {
         "issue": "home",
         "odds": 3.05,
-        "stake_pct": 0.021177
+        "stake_pct": 0.021177,
+        "realized_pct": 0.043413,
+        "clv_skipped": "no_closing_odds"
       }
     ],
-    "actual_score": null,
+    "actual_score": "2-1",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2867,7 +2877,7 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "0-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2895,7 +2905,7 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "1-1",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -2926,15 +2936,19 @@
       {
         "issue": "draw",
         "odds": 9.0,
-        "stake_pct": 0.001862
+        "stake_pct": 0.001862,
+        "realized_pct": -0.001862,
+        "clv_skipped": "no_closing_odds"
       },
       {
         "issue": "away",
         "odds": 16.0,
-        "stake_pct": 0.002766
+        "stake_pct": 0.002766,
+        "realized_pct": -0.002766,
+        "clv_skipped": "no_closing_odds"
       }
     ],
-    "actual_score": null,
+    "actual_score": "4-1",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3131,7 +3145,7 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "1-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3159,7 +3173,7 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "0-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3190,10 +3204,12 @@
       {
         "issue": "home",
         "odds": 3.06,
-        "stake_pct": 0.004263
+        "stake_pct": 0.004263,
+        "realized_pct": -0.004263,
+        "clv_skipped": "no_closing_odds"
       }
     ],
-    "actual_score": null,
+    "actual_score": "1-1",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3221,7 +3237,7 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "2-2",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3249,7 +3265,7 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "1-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3273,7 +3289,7 @@
     "market_probs": null,
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
+    "actual_score": "0-0",
     "actual_ht": null,
     "meta": {
       "model": "M5",
@@ -3384,6 +3400,144 @@
       "lambda_away": 2.207,
       "market_weight": 0.44,
       "odds_age_days": 4
+    }
+  },
+  {
+    "match": "Coventry-Brighton",
+    "date": "2026-09-12",
+    "competition": "E0",
+    "probs": {
+      "home": 0.23457831068807963,
+      "draw": 0.2554742568270434,
+      "away": 0.509947432484877
+    },
+    "market_probs": {
+      "home": 0.22908651824371057,
+      "draw": 0.25156792415323603,
+      "away": 0.5193455576030535
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Coventry",
+      "away": "Brighton",
+      "lambda_home": 1.094,
+      "lambda_away": 1.293,
+      "market_weight": 0.92,
+      "odds_age_days": 0,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": true,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.8946,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7019,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.4264,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.2184,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.0941,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.4957,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.2986,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.3705,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Man United-Man City",
+    "date": "2026-09-12",
+    "competition": "E0",
+    "probs": {
+      "home": 0.29397045000150934,
+      "draw": 0.24835372952939364,
+      "away": 0.4576758204690971
+    },
+    "market_probs": {
+      "home": 0.2924813773711668,
+      "draw": 0.24847731403088977,
+      "away": 0.4590413085979434
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Man United",
+      "away": "Man City",
+      "lambda_home": 1.469,
+      "lambda_away": 1.755,
+      "market_weight": 0.92,
+      "odds_age_days": 0,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": true,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9496,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8425,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6239,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4028,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2237,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6469,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4316,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.5238,
+          "calibrated": false
+        }
+      }
     }
   }
 ]
