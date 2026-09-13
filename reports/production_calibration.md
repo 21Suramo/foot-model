@@ -46,7 +46,8 @@ Paris réglés sans CLV (8) :
 
 ⚠️ **Ne sert à aucune décision du protocole Gate n=50/n=100** (section « Protocole de revue CLV » de CLAUDE.md) : c'est un proxy, pas une clôture. Constat à l'origine de cette section : football-data.co.uk ne publie ses cotes de clôture Pinnacle qu'avec des mois de retard, une fois la saison terminée — aucun pari théorique réglé en cours de saison n'a donc de `clv_pct` sharp, ce qui bloque structurellement le protocole Gate tant que la saison n'est pas close. `clv_pct_provisional` compare plutôt la cote prise au dernier snapshot Pinnacle capturé dans `book_odds` (roadmap A2, `odds_snapshot.py`) avant le coup d'envoi — un book réel et sharp, mais un instantané pris à un moment quelconque avant le match, pas la clôture elle-même. Sert uniquement à repérer une **dérive grossière** entre la cote prise et le marché ; ne mesure PAS un edge et ne doit jamais remplacer le CLV sharp dans une décision de mise ou de revue de protocole.
 
-Aucun pari réglé avec un snapshot Pinnacle antérieur au coup d'envoi en base : soit `odds_snapshot.py` n'a pas tourné sur ces matchs, soit aucun snapshot n'a été capturé avant le coup d'envoi.
+- 8 pari(s) avec snapshot Pinnacle provisoire — CLV provisoire moyen -6.19%, positif sur 12% des paris — IC 95 % [-15.67 ; +3.78 %].
+- ⚠ 8 pari(s) (< 20) : lecture indicative.
 
 ## Focus 2026-09
 

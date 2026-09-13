@@ -1269,18 +1269,43 @@ def sync_results(conn, path, as_of=None):
 
     Renvoie (synchronisés, en_attente). Un match passé absent de la base (source
     en retard, alias manquant) reste `null` et ressort en attente : on n'invente
-    jamais un score. Suppose que `pipeline.py --update` a déjà tourné."""
+    jamais un score. Suppose que `pipeline.py --update` a déjà tourné.
+
+    Backfill du CLV provisoire (R1) : une entrée déjà réglée (actual_score déjà
+    posé) n'est jamais retouchée sur son résultat, ses mises ou son clv_pct —
+    mais si ses bets n'ont pas encore `clv_pct_provisional` (ex: réglée avant
+    l'introduction de R1, ou aucun snapshot Pinnacle n'existait encore en base
+    à l'époque), on retente ici. settle_entry reste idempotent champ par champ :
+    rien d'autre ne bouge sur une entrée déjà réglée."""
     as_of = as_of or datetime.date.today()
     entries = load_journal(path)
     alias_map = db.load_aliases(conn)
     teams_cache = {}
     synced, pending = [], []
     for e in entries:
-        if e.get("actual_score") is not None or e["date"] >= as_of.isoformat():
-            continue
         league = e.get("competition")
         if league not in teams_cache:
             teams_cache[league] = league_teams(conn, league)
+        if e.get("actual_score") is not None:
+            bets = e.get("bets") or []
+            if any("clv_pct_provisional" not in b for b in bets):
+                pair = entry_teams(e, teams_cache[league], alias_map)
+                provisional = latest_pinnacle_snapshot(conn, league, *pair) if pair else None
+                if provisional:
+                    settle_entry(e, e["actual_score"], e.get("actual_ht"),
+                                 e.get("closing_odds"), provisional)
+                    synced.append({"match": e["match"], "date": e["date"],
+                                   "actual": e["actual_score"], "shift": None,
+                                   "bets_clv": [b["clv_pct"] for b in bets if "clv_pct" in b],
+                                   "bets_clv_provisional": [b["clv_pct_provisional"] for b in bets
+                                                             if "clv_pct_provisional" in b],
+                                   "clv_skipped": [b["clv_skipped"] for b in bets
+                                                   if "clv_pct" not in b and b.get("clv_skipped")],
+                                   "closing_source": (e.get("closing_odds") or {}).get("source"),
+                                   "backfilled": True})
+            continue
+        if e["date"] >= as_of.isoformat():
+            continue
         pair = entry_teams(e, teams_cache[league], alias_map)
         if pair is None:
             pending.append({"match": e["match"], "date": e["date"],
@@ -1983,6 +2008,12 @@ def cmd_sync_results(args, conn):
     as_of = datetime.date.fromisoformat(args.as_of) if args.as_of else None
     synced, pending = sync_results(conn, args.log, as_of)
     for s in synced:
+        if s.get("backfilled"):
+            print(f"  ..  {s['date']}  {s['match']} : CLV provisoire (R1) rattrapé rétroactivement")
+            for clv in s.get("bets_clv_provisional") or []:
+                print(f"        CLV provisoire (R1, book_odds Pinnacle) {clv:+.2%} "
+                      f"— proxy, ne remplace pas le sharp")
+            continue
         note = f"  (joué à {s['shift']:+d} j de la date prévue)" if s["shift"] else ""
         print(f"  OK  {s['date']}  {s['match']} : {s['actual']}{note}")
         for clv in s.get("bets_clv") or []:
@@ -2000,7 +2031,10 @@ def cmd_sync_results(args, conn):
             print(f"  ..  {p['date']}  {p['match']} — {p['reason']}")
         print("  (relance `python pipeline.py --update` puis cette commande ; si "
               "l'attente persiste, creuse la source football-data ou l'alias manquant.)")
-    print(f"\n{len(synced)} résultat(s) synchronisé(s), {len(pending)} encore en attente.")
+    n_backfilled = sum(1 for s in synced if s.get("backfilled"))
+    n_fresh = len(synced) - n_backfilled
+    backfill_note = f" (+ {n_backfilled} rattrapage(s) CLV provisoire R1)" if n_backfilled else ""
+    print(f"\n{n_fresh} résultat(s) synchronisé(s){backfill_note}, {len(pending)} encore en attente.")
 
 
 def cmd_report(args, conn):

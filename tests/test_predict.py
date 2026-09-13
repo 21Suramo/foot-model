@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import datetime
 import inspect
@@ -1391,6 +1392,81 @@ class TestClvProvisional(unittest.TestCase):
             # Pas de clôture sharp en base pour ce match : clv_pct reste absent,
             # clv_pct_provisional est bien renseigné malgré tout (indépendants).
             self.assertNotIn("clv_pct", entry["bets"][0])
+        conn.close()
+
+    def test_sync_results_backfills_provisional_clv_on_already_settled_entry(self):
+        # Reproduit le trou trouvé le 2026-09-13 : une entrée réglée AVANT que
+        # R1 n'existe (ou avant qu'un snapshot Pinnacle n'ait été capturé) doit
+        # récupérer clv_pct_provisional sur un sync-results ultérieur, sans que
+        # actual_score / bets / clv_pct sharp ne bougent.
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(outcome=outcome, price=price))
+        conn.commit()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                 "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                 "predicted_score": "1-2",
+                 "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05,
+                          "realized_pct": -0.05, "clv_skipped": "no_closing_odds"}],
+                 "actual_score": "1-2", "actual_ht": "0-1",
+                 "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}]))
+            synced, pending = predict.sync_results(conn, path, as_of=datetime.date(2026, 9, 20))
+            self.assertEqual(pending, [])
+            self.assertEqual(len(synced), 1)
+            self.assertTrue(synced[0]["backfilled"])
+            self.assertAlmostEqual(synced[0]["bets_clv_provisional"][0], 5.1 / 4.5 - 1.0, places=6)
+            entry = json.loads(path.read_text())[0]
+            bet = entry["bets"][0]
+            self.assertAlmostEqual(bet["clv_pct_provisional"], 5.1 / 4.5 - 1.0, places=6)
+            # rien d'autre n'a bougé sur l'entrée déjà réglée
+            self.assertEqual(entry["actual_score"], "1-2")
+            self.assertEqual(bet["realized_pct"], -0.05)
+            self.assertEqual(bet["clv_skipped"], "no_closing_odds")
+        conn.close()
+
+    def test_sync_results_leaves_settled_entry_alone_without_a_snapshot(self):
+        # Pas de snapshot Pinnacle en base pour ce match : rien à rattraper,
+        # l'entrée réglée reste exactement telle quelle (pas de faux "synced").
+        conn = db.connect(":memory:")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            original = {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                       "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                       "predicted_score": "1-2",
+                       "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05,
+                                "realized_pct": -0.05}],
+                       "actual_score": "1-2", "actual_ht": "0-1",
+                       "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}
+            path.write_text(json.dumps([original]))
+            synced, pending = predict.sync_results(conn, path, as_of=datetime.date(2026, 9, 20))
+            self.assertEqual(synced, [])
+            self.assertEqual(pending, [])
+            self.assertEqual(json.loads(path.read_text())[0], original)
+        conn.close()
+
+    def test_backfilled_entries_do_not_inflate_the_fresh_sync_count(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(outcome=outcome, price=price))
+        conn.commit()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            path.write_text(json.dumps([
+                {"match": "Leeds-Newcastle", "date": "2026-09-14", "competition": "E0",
+                 "probs": {"home": 0.36, "draw": 0.25, "away": 0.39},
+                 "predicted_score": "1-2",
+                 "bets": [{"issue": "home", "odds": 5.1, "stake_pct": 0.05,
+                          "realized_pct": -0.05}],
+                 "actual_score": "1-2", "actual_ht": "0-1",
+                 "meta": {"model": "M5", "home": "Leeds", "away": "Newcastle"}}]))
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                predict.cmd_sync_results(
+                    argparse.Namespace(log=path, as_of="2026-09-20"), conn)
+            self.assertIn("0 résultat(s) synchronisé(s) (+ 1 rattrapage(s) CLV provisoire R1)",
+                         out.getvalue())
         conn.close()
 
     def test_clv_provisional_section_reports_average_with_warning(self):

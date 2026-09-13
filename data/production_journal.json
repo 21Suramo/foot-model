@@ -2488,7 +2488,8 @@
         "odds": 2.43,
         "stake_pct": 0.001397,
         "realized_pct": -0.001397,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.035714
       }
     ],
     "actual_score": "2-2",
@@ -2552,14 +2553,16 @@
         "odds": 5.88,
         "stake_pct": 0.004361,
         "realized_pct": 0.021282,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.043902
       },
       {
         "issue": "away",
         "odds": 10.56,
         "stake_pct": 0.015196,
         "realized_pct": -0.015196,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.258947
       }
     ],
     "actual_score": "2-2",
@@ -2595,7 +2598,8 @@
         "odds": 1.84,
         "stake_pct": 0.015973,
         "realized_pct": -0.015973,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.026455
       }
     ],
     "actual_score": "2-3",
@@ -2846,7 +2850,8 @@
         "odds": 3.05,
         "stake_pct": 0.021177,
         "realized_pct": 0.043413,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": 0.234818
       }
     ],
     "actual_score": "2-1",
@@ -2938,14 +2943,16 @@
         "odds": 9.0,
         "stake_pct": 0.001862,
         "realized_pct": -0.001862,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.084435
       },
       {
         "issue": "away",
         "odds": 16.0,
         "stake_pct": 0.002766,
         "realized_pct": -0.002766,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.252336
       }
     ],
     "actual_score": "4-1",
@@ -3206,7 +3213,8 @@
         "odds": 3.06,
         "stake_pct": 0.004263,
         "realized_pct": -0.004263,
-        "clv_skipped": "no_closing_odds"
+        "clv_skipped": "no_closing_odds",
+        "clv_pct_provisional": -0.028571
       }
     ],
     "actual_score": "1-1",
