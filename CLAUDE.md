@@ -104,6 +104,25 @@ suivante sera la bonne :
   jamais devinée. `predict.py match` récapitule en fin de run les affiches
   parties sans cote, groupées par raison. Purement additif — n'interagit pas
   avec le CLV par pari de M5.2 (deux champs distincts, aucun recouvrement).
+- **M5.4 — clé d'identité du journal corrigée après un doublon réel en
+  production : implémenté.** Incident du 2026-09-13 : une session a importé
+  depuis une branche orpheline deux prédictions (Coventry-Brighton,
+  Man United-Man City) déjà présentes dans le journal — sous une date
+  différente (2026-09-12 vs 2026-09-13, la vraie date de coup d'envoi) — et
+  s'est retrouvée avec 2 entrées pour le même match réel, une seule portant
+  les vraies mises Kelly. Cause : `log_prediction` détectait « même match »
+  par `(match, date)` ; deux dates différentes pour le même home/away/
+  compétition (report de calendrier, date initialement erronée) passaient à
+  travers et créaient une seconde entrée au lieu d'écraser la première
+  (comportement idempotent pourtant documenté et voulu depuis M5).
+  Corrigé : la clé d'identité est désormais `(match, compétition, saison)`
+  — la saison déduite de la date via `footballdata.expected_current_season`,
+  jamais la date exacte — donc un changement de date sur le même
+  home/away/compétition/saison écrase l'entrée existante au lieu d'en créer
+  une seconde, tout en gardant deux entrées distinctes pour la même affiche
+  d'une saison à l'autre. Tests de régression :
+  `tests/test_predict.py::TestJournal::test_log_is_idempotent_across_date_change_same_season`
+  et `::test_log_creates_new_entry_across_season_boundary`.
 - **M6 — repricing H-1 sur compositions confirmées : implémenté.** Quand une
   composition officielle est connue (~1h avant coup d'envoi), `predict.py
   match --lineup-adjustment FICHIER` ajuste λ_domicile/λ_extérieur du refit

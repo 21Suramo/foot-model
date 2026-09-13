@@ -192,6 +192,29 @@ class TestJournal(unittest.TestCase):
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]["predicted_score"], "1-0")  # meilleur score si victoire A
 
+    def test_log_is_idempotent_across_date_change_same_season(self):
+        """Régression : incident du 2026-09-13 (doublon Coventry-Brighton /
+        Man United-Man City). Un ré-run du même match avec une date DIFFERENTE
+        mais dans la même saison (report de calendrier, ou date initialement
+        erronée) doit écraser l'entrée existante, pas en créer une seconde."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res("A", "B", "2026-09-12"))
+            predict.log_prediction(path, self._res("A", "B", "2026-09-13"))
+            entries = json.loads(path.read_text())
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["date"], "2026-09-13")
+
+    def test_log_creates_new_entry_across_season_boundary(self):
+        """Le même home/away un an plus tard (saison suivante) est un match
+        différent, pas une mise à jour du précédent."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res("A", "B", "2025-09-13"))
+            predict.log_prediction(path, self._res("A", "B", "2026-09-13"))
+            entries = json.loads(path.read_text())
+            self.assertEqual(len(entries), 2)
+
     def test_result_settles_latest_unsettled(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "j.json"

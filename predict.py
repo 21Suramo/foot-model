@@ -982,12 +982,29 @@ def prediction_bets(res, no_stake=False):
     return bets
 
 
+def _entry_season(e):
+    """Saison ('2627', ...) d'une entrée de journal, déduite de sa date.
+
+    N'utilise PAS `e["date"]` seul comme identité de match : un report de
+    calendrier ou une date initialement erronée fait exister deux dates
+    différentes pour le même match réel (cf. incident 2026-09-13, doublon
+    Coventry-Brighton/Man United-Man City créé par `log_prediction` avant ce
+    correctif). La saison suffit à éviter l'autre risque symétrique — confondre
+    deux éditions d'un même affrontement home/away à un an d'écart."""
+    return footballdata.expected_current_season(datetime.date.fromisoformat(e["date"]))
+
+
 def log_prediction(path, res, no_stake=False):
-    """Journalise (ou met à jour) la prédiction. Idempotent : un ré-run du même
-    match/date écrase l'entrée non réglée au lieu d'en créer une seconde."""
+    """Journalise (ou met à jour) la prédiction. Idempotent : un ré-run pour le
+    même match (même home/away/compétition/saison) écrase l'entrée non réglée
+    au lieu d'en créer une seconde — y compris si la date observée diffère
+    entre les deux runs (report de calendrier, date initialement erronée). La
+    date ne fait volontairement PAS partie de la clé d'identité : cf.
+    `_entry_season`."""
     entries = load_journal(path)
     match = f"{res['home']}-{res['away']}"
     date_iso = res["date"].isoformat()
+    season = footballdata.expected_current_season(res["date"])
     entry = {
         "match": match, "date": date_iso, "competition": res["league"],
         "probs": res["final"],
@@ -1012,7 +1029,8 @@ def log_prediction(path, res, no_stake=False):
                                      for m, (p, calibrated) in res.get("derived_markets", {}).items()}},
     }
     for i, e in enumerate(entries):
-        if e["match"] == match and e["date"] == date_iso and e.get("actual_score") is None:
+        if (e["match"] == match and e["competition"] == res["league"]
+                and e.get("actual_score") is None and _entry_season(e) == season):
             entries[i] = entry
             break
     else:
