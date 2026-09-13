@@ -1,0 +1,46 @@
+name: odds-snapshot
+
+on:
+  schedule:
+    # Roadmap A2, décision du 2026-09-13 : Option A (free tier), 2 captures/jour
+    # (matin + soir), markets=h2h/regions=eu uniquement (le moins coûteux) —
+    # 2 x 3 crédits/jour = ~180 crédits/mois sur les 500 du free tier, marge
+    # gardée pour les tests manuels. Voir CLAUDE.md ("Cadence de capture des
+    # cotes") avant de changer ce cron ou les marchés/régions demandés :
+    # au-delà de ~2/jour on dépasse le budget gratuit (cf. odds_snapshot.py).
+    - cron: "0 8 * * *"
+    - cron: "0 20 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Capturer un snapshot de cotes (h2h/eu — cf. budget de crédits)
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python odds_snapshot.py --markets h2h --regions eu
+
+      - name: Committer si de nouvelles lignes sont apparues dans book_odds
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- data/football.db; then
+            echo "Rien à committer (aucune nouvelle ligne capturée)."
+            exit 0
+          fi
+          git add data/football.db
+          git commit -m "odds-snapshot : nouveau snapshot book_odds ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          git push

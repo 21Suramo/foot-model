@@ -1,0 +1,46 @@
+[
+  {
+    "date_placed": "2026-09-01",
+    "match": "Arsenal-Chelsea",
+    "competition": "E0",
+    "issue": "home",
+    "journal_odds": 1.90,
+    "taken_odds_1xbet": 1.85,
+    "stake_eur": 20.0,
+    "result": "win",
+    "notes": ""
+  },
+  {
+    "date_placed": "2026-09-01",
+    "match": "Real Madrid-Barcelona",
+    "competition": "SP1",
+    "issue": "draw",
+    "journal_odds": 3.40,
+    "taken_odds_1xbet": 3.50,
+    "stake_eur": 10.0,
+    "result": "loss",
+    "notes": ""
+  },
+  {
+    "date_placed": "2026-09-05",
+    "match": "Monaco-Lens",
+    "competition": "F1",
+    "issue": "away",
+    "journal_odds": 4.00,
+    "taken_odds_1xbet": 4.00,
+    "stake_eur": 15.0,
+    "result": "void",
+    "notes": "match reporté, remboursé par 1xbet"
+  },
+  {
+    "date_placed": "2026-09-12",
+    "match": "Leeds-Newcastle",
+    "competition": "E0",
+    "issue": "home",
+    "journal_odds": 2.50,
+    "taken_odds_1xbet": 2.40,
+    "stake_eur": 5.0,
+    "result": "pending",
+    "notes": ""
+  }
+]

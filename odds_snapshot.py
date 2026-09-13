@@ -36,6 +36,8 @@ import datetime
 import logging
 import sys
 
+import requests
+
 import aliases
 import db
 import oddsapi
@@ -105,8 +107,17 @@ def main(argv=None):
     except RuntimeError as e:
         sys.exit(str(e))
     conn = db.connect(args.db)
-    run(conn, args.markets, args.regions)
-    conn.close()
+    try:
+        run(conn, args.markets, args.regions)
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status == 429:
+            sys.exit(f"Échec API (HTTP 429) — quota de crédits mensuel probablement épuisé : {e}")
+        if status == 401:
+            sys.exit(f"Échec API (HTTP 401) — clé ODDS_API_KEY invalide ou expirée : {e}")
+        raise
+    finally:
+        conn.close()
     return 0
 
 

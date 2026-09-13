@@ -1,8 +1,11 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import requests
 
 import aliases
 import db
@@ -50,6 +53,39 @@ class TestKnownTeamsAndSeedIntegration(unittest.TestCase):
         for api_name in ("Manchester United", "Atlético Madrid", "Real Betis", "AS Monaco", "RC Lens"):
             canonical, ok = osnap.resolve(api_name, alias_map, known)
             self.assertTrue(ok, f"{api_name!r} -> {canonical!r} pas reconnu dans matches")
+
+
+class TestQuotaFailureIsExplicit(unittest.TestCase):
+    """A1 (workflow odds_snapshot.yml) : un quota épuisé ou une clé invalide
+    doit faire échouer le run avec un message clair, pas une traceback brute
+    perdue dans les logs Actions."""
+
+    def _http_error(self, status_code):
+        response = mock.Mock(status_code=status_code)
+        return requests.exceptions.HTTPError(f"{status_code} error", response=response)
+
+    @mock.patch.dict("os.environ", {"ODDS_API_KEY": "fake-key-for-test"})
+    @mock.patch("odds_snapshot.run")
+    def test_429_exits_with_quota_message(self, mock_run):
+        mock_run.side_effect = self._http_error(429)
+        with self.assertRaises(SystemExit) as cm:
+            osnap.main(["--db", ":memory:"])
+        self.assertIn("quota", str(cm.exception).lower())
+
+    @mock.patch.dict("os.environ", {"ODDS_API_KEY": "fake-key-for-test"})
+    @mock.patch("odds_snapshot.run")
+    def test_401_exits_with_invalid_key_message(self, mock_run):
+        mock_run.side_effect = self._http_error(401)
+        with self.assertRaises(SystemExit) as cm:
+            osnap.main(["--db", ":memory:"])
+        self.assertIn("invalide", str(cm.exception).lower())
+
+    @mock.patch.dict("os.environ", {"ODDS_API_KEY": "fake-key-for-test"})
+    @mock.patch("odds_snapshot.run")
+    def test_other_http_error_is_not_swallowed(self, mock_run):
+        mock_run.side_effect = self._http_error(500)
+        with self.assertRaises(requests.exceptions.HTTPError):
+            osnap.main(["--db", ":memory:"])
 
 
 if __name__ == "__main__":

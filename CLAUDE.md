@@ -508,16 +508,20 @@ exactement ce que la discipline du projet interdit.
   une cadence > ~2/jour sans être passé au tier payant (30 €/mois pour
   20 000 crédits au moment de la vérification, 2026-09-10).
 
-  **PAS fait** (le reste de la demande originale d'A2, deux pièces
-  restantes, ni bloquantes ni faites) : pas de cadence de capture
-  automatisée (le script existe, rien ne le déclenche à intervalle régulier
-  — câbler ça dans `.github/workflows/` suppose que l'utilisateur ajoute
-  `ODDS_API_KEY` comme secret du dépôt ET choisisse une cadence dans le
-  budget ci-dessus, une décision qui lui revient) ; l'entrée `--odds` de
-  `predict.py match` reste manuelle (la génération de prédiction ne lit pas
-  `book_odds`). Ne pas présenter A2 comme terminé : la coquille + son
-  contenu (alias) sont là, l'automatisation et l'intégration production à la
-  génération de prédiction ne le sont pas.
+  **Cadence de capture automatisée depuis le 2026-09-13**
+  (`.github/workflows/odds_snapshot.yml`, décision explicite Option A —
+  détails dans la section « Cadence de capture des cotes » plus bas) : 2
+  captures/jour, ~180 crédits/mois. Ce qui reste PAS fait de la demande
+  originale d'A2 : l'entrée `--odds` de `predict.py match` reste manuelle
+  (la génération de prédiction ne lit toujours pas `book_odds` — seul
+  `sync-results` le fait, pour le CLV provisoire R1, cf. exception
+  ci-dessous). Ne pas présenter A2 comme terminé : la capture automatisée
+  existe, l'intégration de `book_odds` à la génération de prédiction non.
+  Le workflow nécessite en outre que l'utilisateur ait ajouté le secret
+  `ODDS_API_KEY` sur GitHub et que ce fichier soit mergé sur la branche par
+  défaut (les crons GitHub Actions ne lisent que la copie du workflow sur
+  `main`) — sans ça, le premier run échoue explicitement ou ne se déclenche
+  simplement jamais.
 
   **Exception (R1, 2026-09-13)** : `predict.py sync-results` lit désormais
   `book_odds` pour UN usage étroit et distinct — poser `clv_pct_provisional`
@@ -578,6 +582,7 @@ python devig_check.py                # proportionnel vs power vs Shin -> reports
 python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
 python coupon.py                     # coupon du week-end filtré (B3) depuis le journal, source unique
+python real_pnl.py                   # P&L réel 1xbet depuis data/real_bets.json -> reports/real_pnl.md
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -605,6 +610,12 @@ python -m unittest discover -s tests # tests unitaires
   ailleurs. Ne planifie rien lui-même (pas de cron intégré) : à lancer à la
   main, ou câblé dans `.github/workflows/` si l'utilisateur ajoute
   `ODDS_API_KEY` comme secret du dépôt ET choisit une cadence dans le budget.
+  **Câblé depuis le 2026-09-13** dans `.github/workflows/odds_snapshot.yml`
+  (voir plus bas) — décision explicite de l'utilisateur (Option A : free
+  tier, 2/jour). Un échec HTTP 429 (quota épuisé) ou 401 (clé invalide) sort
+  désormais avec un message explicite plutôt qu'une traceback brute
+  (`main()`, testé par `tests/test_odds_snapshot.py::TestQuotaFailureIsExplicit`) —
+  les autres erreurs HTTP remontent telles quelles (pas masquées).
 - `footballdata.py` — CSV football-data.co.uk avec cache dans
   `data/raw/football-data/` ; priorité cotes de clôture Pinnacle, repli
   moyenne du marché, puis ouverture (saison 2018-19, colonne `odds_source`).
@@ -780,6 +791,24 @@ python -m unittest discover -s tests # tests unitaires
   pollution à nettoyer — c'est une suggestion théorique que l'utilisateur a
   choisi de ne pas suivre, rien de plus. Ne pas rouvrir cette question sans
   une nouvelle décision explicite de l'utilisateur.
+- `real_pnl.py` — Track B (2026-09-13), suite directe de la décision
+  ci-dessus : lit `data/real_bets.json` (tenu à la main, jamais écrit par
+  `predict.py`/`sync-results` — voir `data/README.md` pour le schéma) et
+  publie `reports/real_pnl.md`. Quatre calculs, tous en LECTURE SEULE sur ce
+  fichier : P&L réel cumulé en euros (`win` : mise × (cote 1xbet − 1) ;
+  `loss` : −mise ; `void` exclu du P&L et du dénominateur du ROI, remboursé ;
+  `pending` exclu des deux, résultat inconnu), ROI réel sur les seuls paris
+  gagné/perdu réglés (avertissement sous 20, même seuil indicatif que
+  `predict.CLV_MIN_BETS`), slippage moyen `cote_journal / cote_1xbet_prise −
+  1` (positif = la cote obtenue sur 1xbet était moins bonne que celle vue
+  dans le journal — calculé sur TOUS les paris ayant les deux cotes,
+  y compris void/pending, puisqu'il mesure l'exécution, pas le résultat), et
+  le comptage par statut. `data/real_bets.json` vide (`[]`) ne fait jamais
+  planter le script — testé explicitement
+  (`tests/test_real_pnl.py::TestSummarizeEmpty`). **Ne jamais fusionner
+  `reports/real_pnl.md` avec `reports/production_calibration.md`** : l'un
+  mesure un P&L réel avec slippage d'exécution, l'autre un modèle sur des
+  mises jamais placées — les mélanger rendrait les deux illisibles.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
@@ -855,6 +884,21 @@ python -m unittest discover -s tests # tests unitaires
   semaine (`predict.py match --fixture ...`) reste manuelle : dépend des
   cotes fraîches récupérées via le skill football-match-predictor
   (recherche web), pas automatisable sans source de cotes programmatique.
+- `.github/workflows/odds_snapshot.yml` — roadmap A2, câblé le 2026-09-13
+  (Option A, décision utilisateur) : deux runs par jour (cron `0 8 * * *` et
+  `0 20 * * *` UTC, + `workflow_dispatch` manuel) de
+  `python odds_snapshot.py --markets h2h --regions eu`, commit+push de
+  `data/football.db` si de nouvelles lignes `book_odds` sont apparues.
+  Budget : 2 × 3 crédits = ~6/jour, ~180/mois sur le quota gratuit de 500 —
+  voir « Cadence de capture des cotes » ci-dessous avant de changer ce cron
+  ou les marchés/régions. **Nécessite le secret de dépôt `ODDS_API_KEY`**
+  (GitHub → Settings → Secrets → Actions) : sans lui, chaque run échoue
+  explicitement (message clair depuis `oddsapi.api_key()`), il ne se
+  contente jamais d'un défaut silencieux. Comme tout déclencheur `schedule`
+  GitHub Actions, le cron n'est actif que sur la copie du workflow présente
+  sur la branche par défaut du dépôt (`main`) — le fichier créé sur une
+  branche de travail ne se déclenchera pas tout seul tant qu'il n'est pas
+  mergé.
 
 Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2026-27.
 
@@ -1029,6 +1073,64 @@ points sous surveillance.
   snapshots réellement indépendants par match, et (b) l'échantillon ne
   sépare pas au moins favoris/outsiders. À revisiter une fois qu'il existe
   plus d'une capture en base.
+
+## Cadence de capture des cotes (roadmap A2, décision du 2026-09-13)
+
+**Option A retenue : rester sur le free tier, 2 captures/jour.**
+`.github/workflows/odds_snapshot.yml` lance `odds_snapshot.py --markets h2h
+--regions eu` à 08:00 et 20:00 UTC — 2 × 3 crédits/jour = ~180 crédits/mois
+sur les 500 du quota gratuit, marge gardée pour des appels manuels de
+test/debug. Coût et alternatives détaillés dans la docstring
+d'`odds_snapshot.py` ; ne pas relire ce budget de mémoire, le revérifier là
+avant de changer le cron ou les marchés/régions demandés.
+
+**Ce que 2/jour permet de mesurer : un mouvement grossier J-2 → J-1, PAS un
+CLV fin.** Deux points par jour ne captent pas les mouvements intra-journée
+(annonces de compo, gros volumes en fin de matinée...) — c'est suffisant
+pour repérer une dérive nette entre deux jours, pas pour approcher une vraie
+clôture. Le CLV provisoire (R1 ci-dessus) reste un proxy grossier avec
+cette cadence, pas une clôture simulée.
+
+**Le CLV provisoire (R1) reste NON-INFORMATIF avec la capture actuelle** :
+au 2026-09-13, `book_odds` ne contient qu'UNE SEULE capture historique
+(le test ponctuel du 2026-09-10, avant ce chantier) — les 8 premiers paris
+backfillés sont donc tous comparés au même instant figé, pas à des
+clôtures indépendantes (cf. section « À surveiller » ci-dessus). Il faudra
+plusieurs semaines de captures 2/jour pour qu'un échantillon de snapshots
+réellement indépendants par match existe.
+
+**Quand passer au tier payant (30 €/mois, 20 000 crédits au 2026-09-10) :**
+seulement quand DEUX conditions sont réunies — (a) le CLV provisoire a
+accumulé n ≥ 30 snapshots indépendants (pas 30 paris sur le même snapshot,
+comme aujourd'hui) ET (b) un besoin réel de granularité 6h se fait sentir
+(ex. le CLV provisoire à cadence 2/jour reste trop bruité pour trancher).
+Ne pas payer par anticipation d'un besoin qui n'est pas encore démontré.
+
+## Suivi du P&L réel (1xbet)
+
+Décision explicite du 2026-09-13 (cf. note dans la description de
+`coupon.py` ci-dessus) : `production_journal.json` reste 100 % théorique,
+le suivi de ce qui est réellement misé sur 1xbet vit dans un fichier
+séparé, jamais écrit par `predict.py`.
+
+- **`data/real_bets.json`** — tenu À LA MAIN par l'utilisateur après chaque
+  pari réel (schéma et exemple dans `data/README.md`). Versionné comme
+  `football.db`/`production_journal.json` (données personnelles de paris,
+  repo privé obligatoire).
+- **`real_pnl.py`** — lecture seule de ce fichier, publie
+  `reports/real_pnl.md` : P&L réel cumulé, ROI réel (paris gagné/perdu
+  réglés uniquement, avertissement sous 20), slippage moyen cote-journal
+  → cote-1xbet, comptage par statut. À lancer manuellement quand utile
+  (`python real_pnl.py`), pas automatisé par un workflow — la saisie dans
+  `real_bets.json` reste manuelle par choix (cf. non-goals de la session du
+  2026-09-13 : ne pas automatiser tant que ce n'est pas devenu fastidieux).
+
+**Ne JAMAIS mélanger `reports/real_pnl.md` et
+`reports/production_calibration.md` dans un même rapport ou une même
+conclusion** : le premier mesure une exécution réelle avec slippage sur un
+book précis, le second un modèle sur des mises théoriques jamais placées.
+Les confondre reviendrait à juger le modèle sur du bruit d'exécution, ou
+inversement à juger l'exécution sur une performance de modèle.
 
 ## Conventions
 
