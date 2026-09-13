@@ -577,6 +577,7 @@ ODDS_API_KEY=... python odds_snapshot.py [--markets h2h,totals] [--regions eu,uk
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
 python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
+python coupon.py                     # coupon du week-end filtré (B3) depuis le journal, source unique
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -748,6 +749,30 @@ python -m unittest discover -s tests # tests unitaires
   détecter une dérive grossière tant que `matches.odds_*` reste vide en
   cours de saison (voir section « Protocole de revue CLV » plus bas), ne
   sert à aucune décision du protocole Gate n=50/n=100.
+- `coupon.py` — Track B (audit 2026-09-13) : un coupon compilé par un outil
+  externe non identifié affichait 7,1 % d'exposition contre ~18,5 % dans le
+  journal pour le même week-end — deux calculs indépendants du même concept,
+  sans source de vérité unique. `coupon.py` lit `data/production_journal.json`
+  (déjà l'unique source des mises Kelly depuis M5.1/M5.5) et n'ajoute qu'un
+  filtrage — jamais un recalcul de cote ou de mise : équipes à faible
+  historique (`LOW_HISTORY_TEAMS`, liste explicite à réviser chaque saison,
+  pas de détection automatique) et `odds_age_days >= 5`
+  (`STALE_ODDS_AGE_DAYS`). Affiche les paris éligibles avec l'exposition
+  cumulée EXACTE (somme des `stake_pct` du journal, jamais recalculée) et les
+  paris exclus avec leur raison — ils restent inchangés dans le journal
+  (suggestions théoriques du modèle, cf. note ci-dessous). Ne recoupe PAS les
+  cotes 1xbet lui-même (les cotes du journal viennent d'autres books) : ça
+  reste une étape manuelle avant toute mise réelle.
+
+  **Rappel important (audit 2026-09-13) : le journal ne distingue pas
+  « suggéré par le modèle » de « réellement misé sur 1xbet ».** Toutes les
+  entrées de `bets` sont des paris théoriques (cf. M5.1 : « les mises n'ont
+  jamais été placées, elles sont recalculées depuis les cotes journalisées »)
+  — un pari qui reste dans le journal après un filtrage `coupon.py` n'est pas
+  un pari « annulé » ou une pollution, juste une suggestion que l'utilisateur
+  a choisi de ne pas suivre. Si un suivi séparé « réellement misé sur 1xbet »
+  devient utile, c'est un nouveau champ/chantier à décider explicitement, pas
+  quelque chose que ce script devine.
 - `backtest_blend.py` — backtest walk-forward du pont marché/modèle de
   `predict.py`. Cotes vieillies par interpolation clôture↔ouverture (les deux
   vraies lignes des CSV bruts), FINAL calculé via le decay réel du code, Brier
