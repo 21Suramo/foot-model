@@ -39,6 +39,21 @@ suivante sera la bonne :
   Téléchargement football-data.co.uk + xG Understat (endpoint JSON
   `getLeagueData`, en-tête `X-Requested-With` requis), stockage SQLite,
   jointure xG par alias avec tolérance ±2 jours, validation `check.py` verte.
+- **M2.1 — jointure xG : repli sur l'orientation domicile/extérieur inversée
+  (2026-09-13) : implémenté.** `check.py` signalait 1 match joué sans xG
+  (Rennes-Paris SG, 2026-08-23) classé à tort comme un alias manquant : les
+  deux noms d'équipe résolvaient déjà correctement. Vraie cause trouvée en
+  comparant les deux sources brutes : football-data.co.uk liste Rennes à
+  domicile (le match a été relocalisé à Roazhon Park), Understat liste
+  Paris Saint Germain à domicile — un désaccord entre sources sur
+  l'orientation, pas sur l'identité des équipes. `xgjoin.join_xg` essaie
+  désormais l'orientation inversée (xg_home/xg_away permutés) après épuisement
+  de la tolérance ±2 jours en orientation directe, sans jamais toucher
+  `matches.home`/`away` (autorité football-data.co.uk) — généralisable à
+  toute future affiche relocalisée, pas un correctif ad hoc pour ce seul
+  match. `check.py` est repassé de 96,3 % à 100 % de couverture xG sur F1
+  2627 sans régénérer aucun fichier figé. Test de régression :
+  `tests/test_pipeline.py::TestXgJoin::test_join_falls_back_to_swapped_home_away`.
 - **M3 — backtest walk-forward Dixon-Coles : implémenté et exécuté.**
   Modèle en Python pur (numpy/scipy), walk-forward hebdomadaire strict,
   ξ = 0.002 figé sur validation 2020-21+2021-22, test 2022-23 → 2025-26.
@@ -557,7 +572,15 @@ python -m unittest discover -s tests # tests unitaires
   (bascule en juillet) — sert au garde-fou de `check.py`.
 - `understat.py` — xG Understat, cache dans `data/raw/understat/`.
 - `xgjoin.py` — jointure xG sur (date, home, away) après résolution
-  d'alias, tolérance ±2 jours.
+  d'alias, tolérance ±2 jours. Repli sur l'orientation domicile/extérieur
+  INVERSÉE (xg_home/xg_away permutés en conséquence) si l'orientation
+  directe échoue : les deux sources désignent parfois différemment le
+  « domicile » d'une affiche relocalisée (terrain indisponible — Rennes-
+  Paris SG du 2026-08-23, joué à Roazhon Park mais Understat le liste
+  home=Paris Saint Germain). Ce n'est pas une supposition sur l'identité
+  des équipes (les alias restent l'unique source de vérité pour les noms) :
+  seule l'étiquette domicile/extérieur diffère, `matches.home`/`away`
+  (autorité football-data.co.uk) n'est jamais modifiée.
 - `aliases.py` — seed de `team_aliases` (nom Understat OU The Odds API →
   nom football-data, un seul namespace). Les alias A2 (27 entrées, EPL/Liga/
   Ligue 1) ont été trouvés par comparaison réelle des noms API aux noms

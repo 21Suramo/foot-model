@@ -156,6 +156,28 @@ class TestXgJoin(unittest.TestCase):
             "SELECT xg_home FROM matches WHERE home = 'Man United'").fetchone()
         self.assertEqual(row["xg_home"], 1.5)
 
+    def test_join_falls_back_to_swapped_home_away(self):
+        """Régression : Rennes-Paris SG du 2026-08-23, relocalisé à Roazhon
+        Park (Rennes à domicile côté football-data.co.uk) mais qu'Understat
+        liste home=Paris Saint Germain/away=Rennes. Le xG doit atterrir sur
+        la bonne équipe (Man United ici) malgré l'inversion domicile/
+        extérieur entre les deux sources."""
+        aliases = {}
+        us = [
+            # Understat inverse home/away par rapport à matches (Wolves-Man United)
+            {"date": "2023-08-11", "home": "Wolves", "away": "Man United",
+             "xg_home": 0.9, "xg_away": 2.3},
+        ]
+        matched, unmatched = xgjoin.join_xg(self.conn, us, aliases)
+        self.assertEqual(matched, 1)
+        self.assertEqual(unmatched, [])
+        row = self.conn.execute(
+            "SELECT xg_home, xg_away FROM matches WHERE home = 'Man United'").fetchone()
+        # Man United est home côté matches -> reçoit le xG que Understat
+        # attribuait à son away (2.3), pas celui de son home nominal (0.9).
+        self.assertEqual(row["xg_home"], 2.3)
+        self.assertEqual(row["xg_away"], 0.9)
+
 
 if __name__ == "__main__":
     unittest.main()
