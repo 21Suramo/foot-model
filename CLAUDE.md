@@ -138,6 +138,32 @@ suivante sera la bonne :
   d'une saison à l'autre. Tests de régression :
   `tests/test_predict.py::TestJournal::test_log_is_idempotent_across_date_change_same_season`
   et `::test_log_creates_new_entry_across_season_boundary`.
+- **M5.5 — les paris déjà posés survivent à un ré-run : implémenté.** Question
+  soulevée après M5.4 : que devient `bets` quand `log_prediction` écrase une
+  entrée non réglée ? Avant ce correctif, RIEN ne protégeait un pari déjà
+  journalisé : `entries[i] = entry` remplaçait tout, `bets` inclus,
+  recalculé à chaque ré-run depuis les cotes DU RUN COURANT. Un run du lundi
+  qui pose un pari (cote 2.50, mise 5 %) suivi d'un repricing (M6
+  `--lineup-adjustment`, cotes rafraîchies en cours de semaine...) sur la
+  même affiche écrasait silencieusement ce pari par un nouveau calcul (cote
+  1.90, mise 1,25 % dans un cas testé) — reproduit et vérifié avant fix.
+  Risque concret à deux niveaux : (1) toute mise déjà engagée sur la base du
+  premier run devient invisible dans le journal ; (2) même en restant
+  purement théorique (aucune mise n'est jamais réellement placée par le
+  système), la « cote prise » que le CLV (M5.2/M7) compare à la clôture
+  dériverait vers la cote du DERNIER run plutôt que rester celle du run qui
+  a posé le pari — un CLV mesuré sur une cote prise artificiellement proche
+  de la clôture bat structurellement moins cette clôture, ce qui biaiserait
+  le CLV vers 0 et fausserait la lecture du chantier entier. Corrigé :
+  `log_prediction` préserve `bets` (et `meta.exposure_factor`/
+  `correlated_exposure`, liés au calcul de ces bets précis) tels quels dès
+  qu'une entrée en a déjà d'enregistrés ; seuls les champs analytiques
+  (probs, market_probs, predicted_score, λ, meta hors bets) se mettent à
+  jour sur un ré-run. Un pari non encore posé (`bets: []`, aucune value
+  détectée) reste recalculable normalement — la préservation ne s'applique
+  qu'à des mises déjà là. Tests de régression :
+  `tests/test_predict.py::TestBetsAndRoi::test_bets_preserved_when_unsettled_entry_is_overwritten`
+  et `::test_bets_still_computed_when_previous_run_had_none`.
 - **M6 — repricing H-1 sur compositions confirmées : implémenté.** Quand une
   composition officielle est connue (~1h avant coup d'envoi), `predict.py
   match --lineup-adjustment FICHIER` ajuste λ_domicile/λ_extérieur du refit
@@ -160,6 +186,10 @@ suivante sera la bonne :
   la composition est fournie à la main (recherche web via le skill) ; c'est
   un ajustement en aval du modèle M3.5 figé, pas un re-tuning de ses
   hyperparamètres — `data/m35_frozen.json` n'est jamais régénéré pour ça.
+  Depuis M5.5 : un repricing H-1 met à jour probs/λ/`meta.lineup_adjustment`
+  dans le journal, mais ne retouche PAS un pari déjà posé lors du run du
+  lundi (`bets` préservé tel quel) — la « cote prise » du CLV reste celle du
+  premier run à avoir vu de la value, jamais celle du dernier repricing.
 - **M7 — mesurer l'edge avant de l'améliorer : implémenté.** Quatre chantiers
   qui ne changent pas le modèle mais rendent lisible s'il a un edge réel.
   1. **CLV réservé à une clôture sharp.** Le CLV était calculé contre

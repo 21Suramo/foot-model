@@ -509,6 +509,38 @@ class TestBetsAndRoi(unittest.TestCase):
             self.assertAlmostEqual(bets[0]["stake_pct"],
                                    predict.kelly_stake(0.55, 2.20), places=6)
 
+    def test_bets_preserved_when_unsettled_entry_is_overwritten(self):
+        """Un pari déjà journalisé (cote X, mise Y) ne doit JAMAIS être
+        recalculé par un ré-run (M6 --lineup-adjustment, cotes rafraîchies en
+        cours de semaine...) même si ce ré-run change les probas/cotes/mise —
+        sinon la "cote prise" du CLV (M5.2/M7) dérive silencieusement vers la
+        cote du dernier run plutôt que de rester celle du run qui a posé le
+        pari, ce qui fausserait le CLV."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            predict.log_prediction(path, self._res(best_odds={"home": 2.50, "draw": 3.50, "away": 3.00}))
+            first = json.loads(path.read_text())[0]["bets"]
+            # Ré-run : nouvelles cotes (repricing) -> stake Kelly différent si recalculé
+            predict.log_prediction(path, self._res(best_odds={"home": 1.90, "draw": 3.60, "away": 4.20}))
+            second = json.loads(path.read_text())[0]["bets"]
+            self.assertEqual(second, first)
+            self.assertEqual(second[0]["odds"], 2.50)
+
+    def test_bets_still_computed_when_previous_run_had_none(self):
+        """La préservation ne s'applique qu'à des bets déjà posés (non vides) :
+        un premier run sans value (bets=[]) n'empêche pas un ré-run avec de
+        meilleures cotes de poser un pari."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            res_no_value = self._res(final={"home": 0.45, "draw": 0.25, "away": 0.30},
+                                      best_odds={"home": 2.0, "draw": 3.5, "away": 3.0})
+            self.assertEqual(predict.prediction_bets(res_no_value), [])
+            predict.log_prediction(path, res_no_value)
+            self.assertEqual(json.loads(path.read_text())[0]["bets"], [])
+            predict.log_prediction(path, self._res())  # value sur 'home'
+            bets = json.loads(path.read_text())[0]["bets"]
+            self.assertEqual([b["issue"] for b in bets], ["home"])
+
     def test_no_stake_leaves_bets_empty(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "j.json"

@@ -1031,6 +1031,22 @@ def log_prediction(path, res, no_stake=False):
     for i, e in enumerate(entries):
         if (e["match"] == match and e["competition"] == res["league"]
                 and e.get("actual_score") is None and _entry_season(e) == season):
+            if e.get("bets"):
+                # Le premier run à avoir posé des paris théoriques fixe la
+                # "cote prise" (bets[].odds) que le CLV (M5.2/M7) compare à la
+                # clôture. Un ré-run (M6 --lineup-adjustment, cotes rafraîchies
+                # en cours de semaine...) affine probs/λ/meta pour la
+                # calibration, mais NE DOIT PAS recalculer bets/stake_pct à
+                # partir des nouvelles cotes : ça déplacerait silencieusement
+                # la cote prise vers celle du dernier run, ce qui fausserait le
+                # CLV (biaisé vers 0, une cote prise proche de la clôture bat
+                # toujours moins la clôture qu'une cote prise plus tôt) et
+                # perdrait la trace d'un pari déjà engagé sur les chiffres du
+                # run précédent. exposure_factor/correlated_exposure sont liés
+                # au calcul de CES bets précis, donc préservés avec eux.
+                entry["bets"] = e["bets"]
+                entry["meta"]["exposure_factor"] = e["meta"]["exposure_factor"]
+                entry["meta"]["correlated_exposure"] = e["meta"]["correlated_exposure"]
             entries[i] = entry
             break
     else:
