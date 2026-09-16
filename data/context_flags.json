@@ -1,1 +1,83 @@
-[]
+[
+  {
+    "match": "Brest-Paris SG", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "PSG UCL vs Slovan Bratislava mercredi 2026-09-09 21:00 -> Brest-PSG dimanche 2026-09-13 : >90h d'écart, hors fenêtre <72h. Vérifié par recherche web (beIN Sports, psg.fr)."
+  },
+  {
+    "match": "Coventry-Brighton", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Ni Coventry ni Brighton en coupe d'Europe. Match déjà exclu du coupon par B3 (Coventry = faible historique)."
+  },
+  {
+    "match": "Getafe-La Coruna", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Recherche web : Antonio Hidalgo toujours entraineur du Deportivo La Corogne au 2026-09, aucun changement trouve pour septembre 2026."
+  },
+  {
+    "match": "Le Mans-Lens", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Phase de ligue Europa League 2026-27 demarre le 16/17 septembre 2026 (verifie via UEFA.com) : Lens n'a pas encore joue l'Europe avant ce match du 13/09."
+  },
+  {
+    "match": "Leeds-Newcastle", "date": "2026-09-14",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Newcastle UCL journee 1 dans la fenetre du 8-10 septembre 2026 -> Leeds-Newcastle du 14/09 : >72h dans tous les cas. Match deja exclu du coupon par B3 (Leeds + cote perimee)."
+  },
+  {
+    "match": "Levante-Barcelona", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Barcelone UCL vs Feyenoord mercredi 2026-09-09 (victoire 5-1) -> Levante-Barcelona dimanche 2026-09-13 : >90h d'ecart, hors fenetre <72h. Verifie par recherche web (barcauniversal, UEFA.com)."
+  },
+  {
+    "match": "Man United-Man City", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": true,
+    "derby": true,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Derby de Manchester (fait). Man City UCL vs Porto jeudi 2026-09-10 21:00 -> derby dimanche 2026-09-13 16:30 BST : ~67,5h d'ecart, SOUS le seuil de 72h -> post_european_away=true. Verifie par recherche web (mancity.com, beIN/ESPN pour l'heure du derby). Cote du pari (3.18) <= DERBY_ODDS_THRESHOLD (4.0) donc le filtre derby de coupon.py ne l'exclut pas."
+  },
+  {
+    "match": "Sociedad-Ath Madrid", "date": "2026-09-13",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Real Sociedad : journee 1 Europa League le 17/09 (Bournemouth), donc pas encore jouee avant ce match. Atletico Madrid : UCL vs Liverpool mercredi 09/09, >90h d'ecart avec le 13/09. Verifie par recherche web (UEFA.com, beIN Sports)."
+  },
+  {
+    "match": "Villarreal-Betis", "date": "2026-09-14",
+    "post_european_home": false, "post_european_away": false,
+    "derby": false,
+    "coach_change_home": false, "coach_change_away": false,
+    "weather_extreme": false,
+    "low_stakes_home": false, "low_stakes_away": false,
+    "notes": "Villarreal UCL vs Porto mardi 2026-09-08 (defaite 0-2) -> Villarreal-Betis du 14/09 : >120h d'ecart. Match deja exclu du coupon par B3 (cote perimee)."
+  }
+]
