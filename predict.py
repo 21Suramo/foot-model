@@ -257,6 +257,7 @@ def market_weight(base_blend, age_days, all_margins_ok):
 
 LINEUP_RATIO_BOUNDS = (0.5, 1.75)  # borne un ratio aberrant (saisie fautive) ;
                                     # une absence réaliste ne divise pas l'attaque par plus de 2
+LINEUP_RATIO_ALERT_THRESHOLD = 0.3  # |ratio - 1| au-delà -> "ajustement fort" signalé à l'affichage
 
 
 def compute_lineup_ratio(confirmed, reference):
@@ -304,12 +305,17 @@ def apply_lineup_adjustment(lam_h, lam_a, rho, adjustment):
     atk_a, def_a = _side_ratios(adjustment.get("away"))
     new_lam_h = lam_h * atk_h * def_a
     new_lam_a = lam_a * atk_a * def_h
+    ratios = {"home/attack": atk_h, "home/defense": def_h,
+              "away/attack": atk_a, "away/defense": def_a}
+    strong_axes = [axis for axis, r in ratios.items()
+                   if abs(r - 1.0) > LINEUP_RATIO_ALERT_THRESHOLD]
     meta = {
         "applied": True,
         "home": {"attack_ratio": round(atk_h, 4), "defense_ratio": round(def_h, 4)},
         "away": {"attack_ratio": round(atk_a, 4), "defense_ratio": round(def_a, 4)},
         "lam_h_before": round(lam_h, 4), "lam_h_after": round(new_lam_h, 4),
         "lam_a_before": round(lam_a, 4), "lam_a_after": round(new_lam_a, 4),
+        "strong_axes": strong_axes,
     }
     return new_lam_h, new_lam_a, meta
 
@@ -703,10 +709,17 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
     if lineup_meta["applied"]:
         grid_arr, raw = grid_and_probs_from_lambdas(lam_h, lam_a, fitted.rho)
         grid = grid_to_dict(grid_arr)
+        # Référence pour l'affichage : ce que le modèle aurait dit SANS la
+        # composition (mêmes λ que le refit du lundi), pour chiffrer l'impact.
+        probs_before = dict(zip(ISSUES, backtest35.apply_temperature(
+            fitted.probs_1x2(home, away), cfg["temperature"])))
     else:
         grid = grid_to_dict(fitted.score_grid(home, away))
         raw = fitted.probs_1x2(home, away)
     model_probs = dict(zip(ISSUES, backtest35.apply_temperature(raw, cfg["temperature"])))
+    if lineup_meta["applied"]:
+        lineup_meta["prob_delta_pts"] = {k: round((model_probs[k] - probs_before[k]) * 100, 2)
+                                         for k in ISSUES}
 
     # Grille 12×12 (roadmap A1) : mêmes λ/rho (ajustés composition compris) que
     # ci-dessus, juste moins tronquée — cf. derived_markets.py pour pourquoi
@@ -773,10 +786,25 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
     print(f"Lambdas : {home} λ={res['lam_h']:.2f} | {away} λ={res['lam_a']:.2f}")
     la = res.get("lineup_adjustment")
     if la and la["applied"]:
-        print(f"Ajustement composition (H-1) : {home} attaque×{la['home']['attack_ratio']:.2f} "
-              f"déf×{la['home']['defense_ratio']:.2f} | {away} attaque×{la['away']['attack_ratio']:.2f} "
-              f"déf×{la['away']['defense_ratio']:.2f} → λ {la['lam_h_before']:.2f}→{la['lam_h_after']:.2f} / "
-              f"{la['lam_a_before']:.2f}→{la['lam_a_after']:.2f}")
+        print(f"Ajustement composition (H-1, M6) :")
+        print(f"  {home} — attaque ×{la['home']['attack_ratio']:.2f}  "
+              f"défense ×{la['home']['defense_ratio']:.2f}")
+        print(f"  {away} — attaque ×{la['away']['attack_ratio']:.2f}  "
+              f"défense ×{la['away']['defense_ratio']:.2f}")
+        print(f"  λ {home} : {la['lam_h_before']:.2f} → {la['lam_h_after']:.2f} "
+              f"({(la['lam_h_after'] - la['lam_h_before']) / la['lam_h_before']:+.1%})")
+        print(f"  λ {away} : {la['lam_a_before']:.2f} → {la['lam_a_after']:.2f} "
+              f"({(la['lam_a_after'] - la['lam_a_before']) / la['lam_a_before']:+.1%})")
+        d = la.get("prob_delta_pts")
+        if d:
+            print(f"  Impact sur le 1N2 (modèle, avant blend marché) : "
+                  f"{home} {d['home']:+.1f} pt | Nul {d['draw']:+.1f} pt | {away} {d['away']:+.1f} pt")
+        if la.get("strong_axes"):
+            axes_fr = {"home/attack": f"{home}/attaque", "home/defense": f"{home}/défense",
+                      "away/attack": f"{away}/attaque", "away/defense": f"{away}/défense"}
+            listed = ", ".join(axes_fr.get(a, a) for a in la["strong_axes"])
+            print(f"  ⚠ AJUSTEMENT FORT ({listed}) — écart > {LINEUP_RATIO_ALERT_THRESHOLD:.0%} "
+                  f"par rapport à 1.0, à vérifier manuellement avant de valider ce pari.")
     print(f"Pont marché/modèle : {res['fresh_note']}" +
           (f" → poids marché {res['market_weight']:.0%} "
            f"(démargeage {res.get('devig') or DEVIG_METHOD})." if res["market"]

@@ -4,12 +4,15 @@ __pycache__/
 
 # Données : tout ignoré par défaut (base reconstructible via `pipeline.py --update`)...
 data/*
-# ... sauf ces cinq fichiers, versionnés volontairement (voir data/README.md) :
-# football.db/production_journal.json/real_bets.json contiennent des données
-# personnelles de paris, le repo DOIT rester privé.
+# ... sauf ces sept fichiers, versionnés volontairement (voir data/README.md) :
+# football.db/production_journal.json/real_bets.json/context_flags.json
+# contiennent des données personnelles de paris ou de suivi, le repo DOIT
+# rester privé.
 !data/football.db
 !data/production_journal.json
 !data/real_bets.json
+!data/context_flags.json
 !data/m35_frozen.json
+!data/lineup_adjustment_template.json
 !data/README.md
 # data/raw/ reste ignoré : cache re-téléchargeable, inutile de le versionner

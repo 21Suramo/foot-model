@@ -190,6 +190,15 @@ suivante sera la bonne :
   dans le journal, mais ne retouche PAS un pari déjà posé lors du run du
   lundi (`bets` préservé tel quel) — la « cote prise » du CLV reste celle du
   premier run à avoir vu de la value, jamais celle du dernier repricing.
+  **Niveau 1 (session 2026-09-16, analyse sportive)** : ce mécanisme
+  existait mais n'avait jamais été testé end-to-end ni rendu lisible —
+  vérifié sur un match réel (sens et magnitude des λ corrects), affichage
+  enrichi dans `print_prediction` (ratios, λ avant/après, impact 1N2 en
+  points via `meta.lineup_adjustment.prob_delta_pts`, alerte
+  `LINEUP_RATIO_ALERT_THRESHOLD`=0,3 si un ratio s'écarte fortement de 1),
+  et `data/lineup_adjustment_template.json` comme point de départ
+  copiable-collable. Détails dans la section « Analyse sportive — roadmap »
+  plus bas.
 - **M7 — mesurer l'edge avant de l'améliorer : implémenté.** Quatre chantiers
   qui ne changent pas le modèle mais rendent lisible s'il a un edge réel.
   1. **CLV réservé à une clôture sharp.** Le CLV était calculé contre
@@ -558,6 +567,101 @@ par item ci-dessus (décision fournisseur, ou volume de paris/données qui
 n'existe pas encore) ; rien de nouveau n'y a été codé, aucun hyperparamètre
 1N2/M3.5 n'a été retouché.
 
+## Analyse sportive — roadmap (session du 2026-09-16)
+
+Constat de départ : le système est purement statistique (Dixon-Coles + xG +
+blend marché). Il manque la couche « analyse sportive » qu'un parieur humain
+ajoute d'habitude par-dessus un modèle — compositions, contexte de calendrier,
+rotation, psychologie d'un derby ou d'un enjeu faible. Décision actée :
+ajouter cette couche PAR NIVEAUX, sans casser l'architecture existante
+(M3.5 figé, journal théorique, staking Kelly 1N2 uniquement) ni transformer
+un ajustement manuel en pipeline automatisé non demandé.
+
+- **Niveau 1 — utiliser M6 (déjà implémenté, jamais utilisé avant cette
+  session) : ✅ implémenté.** `--lineup-adjustment` (section M6 plus haut)
+  existait depuis un chantier précédent mais n'avait jamais été testé
+  end-to-end ni rendu lisible en sortie. Cette session :
+  1. Vérifié end-to-end sur un match réel (`predict.py match --league E0
+     --home Arsenal --away Chelsea --lineup-adjustment ...`) : `meta.lineup_adjustment.applied`
+     passe à `true`, les λ avant/après diffèrent dans le bon sens (titulaire
+     clé absent → λ domicile baisse), le ratio d'attaque multiplie bien le λ
+     de l'équipe concernée et le ratio de défense multiplie le λ ADVERSE
+     (sémantique M6 relue et confirmée, pas juste supposée).
+  2. `data/lineup_adjustment_template.json` — template copiable-collable
+     (home/away × attack/defense, `confirmed`/`reference`), documenté dans
+     `data/README.md` : ce qu'on met dans chaque liste, d'où vient la donnée
+     (recherche web des compos probables — même source que le skill
+     football-match-predictor, jamais de scraping), les bornes
+     `LINEUP_RATIO_BOUNDS` (0,5–1,75), comment lire le résultat.
+  3. Affichage enrichi dans `predict.py` (`print_prediction`) : ratios
+     attaque/défense par équipe, λ avant/après avec variation en %, impact
+     sur le 1N2 en points (`meta.lineup_adjustment.prob_delta_pts`,
+     comparaison au modèle SANS la composition), et une alerte explicite
+     `⚠ AJUSTEMENT FORT` dès que `|ratio − 1| > LINEUP_RATIO_ALERT_THRESHOLD`
+     (0,3) sur n'importe quel axe — un seuil qui ne bloque rien, juste un
+     signal « à vérifier manuellement » avant de valider un pari dessus.
+  N'a pas touché `model.py` ni retuné aucun hyperparamètre M3.5 : purement
+  un affichage plus lisible d'un mécanisme déjà validé par les tests
+  existants (`TestLineupAdjustment`, `TestPredictMatch`).
+- **Niveau 2 — filtres manuels de contexte dans `coupon.py` : ✅
+  implémenté.** `data/context_flags.json` (vide au départ, `[]`, versionné
+  comme `football.db`/`production_journal.json` — documenté dans
+  `data/README.md`) : flags tenus À LA MAIN par match (rotation post-Europe
+  < 72h, derby, changement d'entraîneur < 14j, météo extrême, enjeu faible),
+  remplis après recherche web, jamais déduits automatiquement. `coupon.py`
+  lit ce fichier et applique 5 règles de rejet (constantes en tête de
+  fichier — `DERBY_ODDS_THRESHOLD` notamment) : rotation post-européenne,
+  changement d'entraîneur, derby avec cote outsider (> 4,0 — un derby à cote
+  favorite reste éligible), météo extrême, enjeu faible. Chaque exclusion
+  affiche sa (ses) raison(s) exacte(s), cumulée avec les filtres B3
+  existants (faible historique, cote périmée) — un pari peut être exclu pour
+  plusieurs raisons à la fois, toutes affichées. Un match ABSENT de
+  `context_flags.json` reste GARDÉ (comportement par défaut inchangé,
+  jamais d'exclusion par défaut) ; `coupon.py` avertit en fin de run du
+  nombre de matchs non documentés (`undocumented_matches`), à vérifier
+  manuellement plutôt que deviné. Section « Contexte » pour chaque pari
+  retenu (flags vrais uniquement — silence sur les flags faux — + rappel
+  « vérifier compos officielles 1h avant », pont naturel vers le Niveau 1)
+  et pour chaque pari exclu (raison + mise théorique qui aurait été
+  engagée, pour référence). `tests/test_coupon.py` : 12 tests ajoutés
+  (`TestCouponContextFlagsNiveau2`, `TestCouponContextFlagsLoading`),
+  couvrant les 5 règles, le cas derby favori/outsider, le cas non documenté,
+  et le recalcul de l'exposition cumulée après filtrage. Ne modifie jamais
+  `production_journal.json` : comme les filtres B3, c'est un filtrage à la
+  lecture, les paris exclus restent dans le journal comme suggestions
+  théoriques du modèle.
+- **Niveau 3 — modèle par joueur : NON ATTAQUÉ, bloqué sur une décision
+  utilisateur.** Ce que ça demanderait, concrètement :
+  - **Sources de données** : Understat expose déjà xG/xA par joueur/match
+    pour E0/SP1/F1 (gratuit, même source que le xG d'équipe déjà utilisé
+    par `understat.py`/`xgjoin.py`) — à vérifier au niveau granularité
+    exacte avant de s'engager (minutes jouées par match disponibles ? poste
+    déclaré ? historique assez profond pour un fit walk-forward ?).
+  - **Granularité** : compositions probables (pré-match, incertaines) vs
+    minutes réellement jouées (post-match, sert à calibrer un modèle mais
+    pas à prédire à l'avance) — un choix qui détermine toute l'architecture
+    en aval, pas un détail d'implémentation.
+  - **Protocole de validation** : walk-forward tune/validation/test comme
+    M3.5/A1, avec le même garde anti-fuite — rien de moins rigoureux qu'un
+    chantier déjà validé ne serait acceptable ici.
+  - **Coût réel estimé** : ~2 mois de développement, une nouvelle table
+    SQLite (`player_match_stats`), un nouveau module (`player_model.py`),
+    intégration dans `predict.py` (remplacerait à terme M6 comme le
+    document de roadmap « profit durable » le note déjà lui-même dans la
+    section B1-B4 : « ton M6 est un pansement post-hoc »).
+  - **Décision qui revient à l'utilisateur, pas à cette session** : est-ce
+    que le projet a assez d'edge mesuré (CLV réel positif, ROI réel positif
+    sur n ≥ 100 paris réglés — cf. Critères d'arrêt et Protocole de revue
+    CLV) pour justifier un investissement de cet ordre ? À ce jour
+    (2026-09-16), aucun chantier statistique testé n'a d'edge démontré
+    (cf. Synthèse honnête en tête de fichier) et le CLV réel de production
+    reste à un stade d'échantillon non-informatif (8 paris avec clôture
+    sharp, 0 avec `pinnacle_close` — cf. Protocole de revue CLV). Démarrer
+    Niveau 3 maintenant serait construire une couche de complexité
+    supplémentaire sur un socle dont l'edge n'est pas encore mesuré — ce
+    n'est pas interdit, mais ce n'est pas non plus une décision que ce
+    fichier peut prendre à la place de l'utilisateur.
+
 ## Commandes
 
 ```bash
@@ -581,7 +685,7 @@ ODDS_API_KEY=... python odds_snapshot.py [--markets h2h,totals] [--regions eu,uk
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
 python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validation des 9 marchés dérivés
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
-python coupon.py                     # coupon du week-end filtré (B3) depuis le journal, source unique
+python coupon.py                     # coupon du week-end filtré (B3 + Niveau 2 contexte) depuis le journal, source unique
 python real_pnl.py                   # P&L réel 1xbet depuis data/real_bets.json -> reports/real_pnl.md
 python -m unittest discover -s tests # tests unitaires
 ```
@@ -773,7 +877,18 @@ python -m unittest discover -s tests # tests unitaires
   paris exclus avec leur raison — ils restent inchangés dans le journal
   (suggestions théoriques du modèle, cf. note ci-dessous). Ne recoupe PAS les
   cotes 1xbet lui-même (les cotes du journal viennent d'autres books) : ça
-  reste une étape manuelle avant toute mise réelle.
+  reste une étape manuelle avant toute mise réelle. **Niveau 2 (session
+  2026-09-16, analyse sportive)** : lit en plus `data/context_flags.json`
+  (`load_context_flags`, tenu à la main, cf. `data/README.md`) et applique 5
+  règles de rejet configurables (`context_reasons` : rotation post-
+  européenne, changement d'entraîneur, derby + cote outsider au-delà de
+  `DERBY_ODDS_THRESHOLD`, météo extrême, enjeu faible), cumulées avec les
+  filtres B3 ci-dessus dans la même liste de raisons. Un match absent de
+  `context_flags.json` reste éligible (`undocumented_matches` le liste en
+  fin de run, purement informationnel). Section « Contexte » sur chaque
+  pari retenu (flags vrais + rappel de vérifier les compos officielles) via
+  `context_notes` — jamais de recalcul de cote ou de mise, même principe
+  que le filtrage B3.
 
   **Décision explicite (2026-09-13) : le journal reste 100 % théorique, le
   suivi des paris réels sur 1xbet est volontairement HORS de ce dépôt.**
@@ -1135,14 +1250,17 @@ inversement à juger l'exécution sur une performance de modèle.
 ## Conventions
 
 - `data/` n'est PAS versionné par défaut (la base se reconstruit entièrement
-  avec `python pipeline.py --update`), **sauf quatre fichiers versionnés
-  volontairement** : `football.db`, `production_journal.json` (données
-  personnelles de paris — **le dépôt doit rester privé**, voir
-  `data/README.md`), `m35_frozen.json` (réglages M3.5 figés) et
-  `data/README.md` lui-même. `.gitignore` encode cette règle par exception
-  (`data/*` ignoré, puis les quatre fichiers explicitement inclus) — toute
-  autre présence/absence dans `data/` est une incohérence à corriger, pas
-  un cas particulier à ajouter en silence.
+  avec `python pipeline.py --update`), **sauf sept fichiers versionnés
+  volontairement** (le compte exact et le détail de chacun vivent dans
+  `data/README.md`, à tenir synchronisé avec `.gitignore` — ne pas le relire
+  de mémoire ici) : `football.db`, `production_journal.json`, `real_bets.json`
+  et `context_flags.json` (données personnelles de paris/contexte — **le
+  dépôt doit rester privé**), `m35_frozen.json` (réglages M3.5 figés),
+  `lineup_adjustment_template.json` (template vide, pas une donnée
+  personnelle) et `data/README.md` lui-même. `.gitignore` encode cette règle
+  par exception (`data/*` ignoré, puis les sept fichiers explicitement
+  inclus) — toute autre présence/absence dans `data/` est une incohérence à
+  corriger, pas un cas particulier à ajouter en silence.
 - Après toute modification du pipeline : relancer les tests puis `check.py`
   et n'intégrer que si le résultat global est OK (code retour 0).
 - **Secrets (clés API) : jamais en dur dans le code, jamais dans un fichier

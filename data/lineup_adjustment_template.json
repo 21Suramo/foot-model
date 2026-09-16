@@ -1,0 +1,32 @@
+{
+  "home": {
+    "attack": {
+      "confirmed": [
+        {"name": "Titulaire A", "value": 0.55},
+        {"name": "Titulaire B", "value": 0.35},
+        {"name": "Remplaçant (titulaire C absent, blessure)", "value": 0.10},
+        {"name": "Titulaire D", "value": 0.30}
+      ],
+      "reference": [
+        {"name": "Titulaire A", "value": 0.55},
+        {"name": "Titulaire B", "value": 0.35},
+        {"name": "Titulaire C", "value": 0.50},
+        {"name": "Titulaire D", "value": 0.30}
+      ]
+    },
+    "defense": {
+      "confirmed": [],
+      "reference": []
+    }
+  },
+  "away": {
+    "attack": {
+      "confirmed": [],
+      "reference": []
+    },
+    "defense": {
+      "confirmed": [],
+      "reference": []
+    }
+  }
+}
