@@ -3409,5 +3409,2059 @@
       "market_weight": 0.44,
       "odds_age_days": 4
     }
+  },
+  {
+    "match": "Brentford-Chelsea",
+    "date": "2026-09-18",
+    "competition": "E0",
+    "probs": {
+      "home": 0.33843631457593476,
+      "draw": 0.25244909799301407,
+      "away": 0.40911458743105117
+    },
+    "market_probs": {
+      "home": 0.3298328462857374,
+      "draw": 0.2538902693369412,
+      "away": 0.41627688437732135
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Brentford",
+      "away": "Chelsea",
+      "lambda_home": 1.863,
+      "lambda_away": 1.612,
+      "market_weight": 0.92,
+      "odds_age_days": 1,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9594,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.871,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6729,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4578,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2697,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6852,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5556,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4788,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Tottenham-Aston Villa",
+    "date": "2026-09-19",
+    "competition": "E0",
+    "probs": {
+      "home": 0.4660766760131637,
+      "draw": 0.2537657471124158,
+      "away": 0.28015757687442044
+    },
+    "market_probs": {
+      "home": 0.49680081698215506,
+      "draw": 0.24791523578460226,
+      "away": 0.25528394723324266
+    },
+    "predicted_score": "2-1",
+    "bets": [
+      {
+        "issue": "away",
+        "odds": 3.6,
+        "stake_pct": 0.000824
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Tottenham",
+      "away": "Aston Villa",
+      "lambda_home": 1.421,
+      "lambda_away": 1.401,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9283,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7849,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5353,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3131,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1558,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5837,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4155,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4086,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Brighton-Arsenal",
+    "date": "2026-09-19",
+    "competition": "E0",
+    "probs": {
+      "home": 0.2010372523359737,
+      "draw": 0.24175105190961632,
+      "away": 0.55721169575441
+    },
+    "market_probs": {
+      "home": 0.19594797271938724,
+      "draw": 0.2349149176066032,
+      "away": 0.5691371096740095
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Brighton",
+      "away": "Arsenal",
+      "lambda_home": 1.033,
+      "lambda_away": 1.653,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9198,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7607,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.502,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.2827,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.135,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5325,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.2764,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4919,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Newcastle-Hull",
+    "date": "2026-09-19",
+    "competition": "E0",
+    "probs": {
+      "home": 0.5710453100550336,
+      "draw": 0.23371058215016915,
+      "away": 0.19524410779479728
+    },
+    "market_probs": {
+      "home": 0.6056886729498397,
+      "draw": 0.2146041033035856,
+      "away": 0.17970722374657463
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Newcastle",
+      "away": "Hull",
+      "lambda_home": 1.393,
+      "lambda_away": 0.976,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": true,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.8933,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.698,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.4219,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.2149,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.0921,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.4816,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4058,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.2555,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Everton-Ipswich",
+    "date": "2026-09-19",
+    "competition": "E0",
+    "probs": {
+      "home": 0.5646126262728601,
+      "draw": 0.2392702232602619,
+      "away": 0.196117150466878
+    },
+    "market_probs": {
+      "home": 0.544094324974116,
+      "draw": 0.24505392704651613,
+      "away": 0.21085174797936782
+    },
+    "predicted_score": "2-0",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 1.82,
+        "stake_pct": 0.008413
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Everton",
+      "away": "Ipswich",
+      "lambda_home": 2.012,
+      "lambda_away": 0.946,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9379,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8047,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5653,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3434,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1778,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5398,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5973,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.2444,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Nott'm Forest-Coventry",
+    "date": "2026-09-19",
+    "competition": "E0",
+    "probs": {
+      "home": 0.5412766090044537,
+      "draw": 0.25722235112114455,
+      "away": 0.20150103987440177
+    },
+    "market_probs": {
+      "home": 0.5687607231667693,
+      "draw": 0.24129463375222338,
+      "away": 0.18994464308100736
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Nott'm Forest",
+      "away": "Coventry",
+      "lambda_home": 1.303,
+      "lambda_away": 0.9,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.8762,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.6597,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.378,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.1813,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.0729,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.4456,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.3743,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.2276,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Bournemouth-Liverpool",
+    "date": "2026-09-20",
+    "competition": "E0",
+    "probs": {
+      "home": 0.3398484445367025,
+      "draw": 0.24660446540993416,
+      "away": 0.4135470900533633
+    },
+    "market_probs": {
+      "home": 0.3059640302192142,
+      "draw": 0.24730473130698027,
+      "away": 0.4467312384738055
+    },
+    "predicted_score": "1-2",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 3.1,
+        "stake_pct": 0.006373
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Bournemouth",
+      "away": "Liverpool",
+      "lambda_home": 1.684,
+      "lambda_away": 1.624,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9531,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8527,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.641,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4214,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2388,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6637,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5017,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4828,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Leeds-Crystal Palace",
+    "date": "2026-09-20",
+    "competition": "E0",
+    "probs": {
+      "home": 0.5098476601401648,
+      "draw": 0.24903220527930836,
+      "away": 0.24112013458052678
+    },
+    "market_probs": {
+      "home": 0.5378534068006366,
+      "draw": 0.24372420145442653,
+      "away": 0.21842239174493683
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Leeds",
+      "away": "Crystal Palace",
+      "lambda_home": 1.688,
+      "lambda_away": 1.28,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": true,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9371,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8074,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5686,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3455,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1793,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5996,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.503,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.366,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Man City-Sunderland",
+    "date": "2026-09-20",
+    "competition": "E0",
+    "probs": {
+      "home": 0.7256387314806164,
+      "draw": 0.1770236139777678,
+      "away": 0.09733765454161569
+    },
+    "market_probs": {
+      "home": 0.7466750653565656,
+      "draw": 0.16302657378114951,
+      "away": 0.09029836086228492
+    },
+    "predicted_score": "2-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Man City",
+      "away": "Sunderland",
+      "lambda_home": 2.151,
+      "lambda_away": 0.806,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9387,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8037,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5643,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3432,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1776,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.498,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.6334,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.1934,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Fulham-Man United",
+    "date": "2026-09-20",
+    "competition": "E0",
+    "probs": {
+      "home": 0.29414066631599495,
+      "draw": 0.25141833201378067,
+      "away": 0.45444100167022444
+    },
+    "market_probs": {
+      "home": 0.27618549590866753,
+      "draw": 0.2467296565364901,
+      "away": 0.4770848475548425
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Fulham",
+      "away": "Man United",
+      "lambda_home": 1.409,
+      "lambda_away": 1.62,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9403,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8166,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5824,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3593,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1897,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6172,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4113,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4816,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Espanol-Elche",
+    "date": "2026-09-18",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.5206110358113797,
+      "draw": 0.2592548532748598,
+      "away": 0.22013411091376048
+    },
+    "market_probs": {
+      "home": 0.5216466507441789,
+      "draw": 0.26161194992249115,
+      "away": 0.21674139933332992
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Espanol",
+      "away": "Elche",
+      "lambda_home": 1.708,
+      "lambda_away": 1.184,
+      "market_weight": 0.92,
+      "odds_age_days": 1,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9446,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7842,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5514,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3287,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.167,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.568,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5094,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.3316,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Osasuna-Vallecano",
+    "date": "2026-09-19",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.4219302661612847,
+      "draw": 0.278397629121553,
+      "away": 0.2996721047171623
+    },
+    "market_probs": {
+      "home": 0.4050877376058065,
+      "draw": 0.2865175725508344,
+      "away": 0.3083946898433591
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Osasuna",
+      "away": "Vallecano",
+      "lambda_home": 1.496,
+      "lambda_away": 1.092,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9248,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7302,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.4779,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.2613,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1208,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5153,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4408,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.298,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Ath Bilbao-Alaves",
+    "date": "2026-09-19",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.5630509996284355,
+      "draw": 0.2502039832617465,
+      "away": 0.18674501710981806
+    },
+    "market_probs": {
+      "home": 0.5796871787511265,
+      "draw": 0.2507868741177725,
+      "away": 0.169525947131101
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Ath Bilbao",
+      "away": "Alaves",
+      "lambda_home": 1.552,
+      "lambda_away": 1.015,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9233,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7263,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.4728,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.257,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1181,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5025,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4596,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.2699,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Celta-Santander",
+    "date": "2026-09-19",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.5167667821852865,
+      "draw": 0.24013759140437393,
+      "away": 0.2430956264103396
+    },
+    "market_probs": {
+      "home": 0.5349712947456434,
+      "draw": 0.2397331276168669,
+      "away": 0.22529557763748972
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Celta",
+      "away": "Santander",
+      "lambda_home": 1.581,
+      "lambda_away": 1.252,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9412,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7744,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5376,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3154,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1575,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5668,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.469,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.356,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Sevilla-Barcelona",
+    "date": "2026-09-19",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.12110646513385222,
+      "draw": 0.1530464126342999,
+      "away": 0.7258471222318479
+    },
+    "market_probs": {
+      "home": 0.06747022702532701,
+      "draw": 0.11137814548873384,
+      "away": 0.8211516274859392
+    },
+    "predicted_score": "1-2",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 10.0,
+        "stake_pct": 0.005863
+      },
+      {
+        "issue": "draw",
+        "odds": 6.8,
+        "stake_pct": 0.001755
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Sevilla",
+      "away": "Barcelona",
+      "lambda_home": 1.075,
+      "lambda_away": 2.301,
+      "market_weight": 0.38,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9658,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8503,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6522,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4363,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2513,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.592,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.2918,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.6693,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Getafe-Malaga",
+    "date": "2026-09-20",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.45835244570304706,
+      "draw": 0.3127929910054732,
+      "away": 0.22885456329147985
+    },
+    "market_probs": {
+      "home": 0.4483641933757095,
+      "draw": 0.3062811148150032,
+      "away": 0.2453546918092874
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Getafe",
+      "away": "Malaga",
+      "lambda_home": 1.091,
+      "lambda_away": 0.634,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.8218,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.5143,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.2492,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.0969,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.0312,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.3117,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.2976,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.1332,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Ath Madrid-Real Madrid",
+    "date": "2026-09-20",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.29813534589756574,
+      "draw": 0.23765968880579563,
+      "away": 0.4642049652966388
+    },
+    "market_probs": {
+      "home": 0.2634366894953616,
+      "draw": 0.24336756339539267,
+      "away": 0.49319574710924585
+    },
+    "predicted_score": "1-2",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 3.43,
+        "stake_pct": 0.002326
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Ath Madrid",
+      "away": "Real Madrid",
+      "lambda_home": 1.504,
+      "lambda_away": 1.656,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9576,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8236,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6108,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3886,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2124,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6289,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4435,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4931,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Villarreal-Levante",
+    "date": "2026-09-20",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.6310954323357109,
+      "draw": 0.19797154412761783,
+      "away": 0.17093302353667122
+    },
+    "market_probs": {
+      "home": 0.6139106451346062,
+      "draw": 0.21350668793919986,
+      "away": 0.17258266692619387
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Villarreal",
+      "away": "Levante",
+      "lambda_home": 2.424,
+      "lambda_away": 1.22,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": true,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9739,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8786,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.7013,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4942,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.3021,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6416,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.6968,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.3447,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "La Coruna-Betis",
+    "date": "2026-09-20",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.3398051405218184,
+      "draw": 0.2553644929008702,
+      "away": 0.40483036657731136
+    },
+    "market_probs": {
+      "home": 0.29397040119626694,
+      "draw": 0.270434933957645,
+      "away": 0.43559466484608805
+    },
+    "predicted_score": "1-2",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 3.1,
+        "stake_pct": 0.006357
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "La Coruna",
+      "away": "Betis",
+      "lambda_home": 1.597,
+      "lambda_away": 1.49,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": true,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9544,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8135,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5951,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3722,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1995,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6174,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.474,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4389,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Valencia-Sociedad",
+    "date": "2026-09-20",
+    "competition": "SP1",
+    "probs": {
+      "home": 0.38287737397623733,
+      "draw": 0.2645684667473417,
+      "away": 0.352554159276421
+    },
+    "market_probs": {
+      "home": 0.3407050676877323,
+      "draw": 0.27665136266609386,
+      "away": 0.38264356964617385
+    },
+    "predicted_score": "1-0",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 2.7,
+        "stake_pct": 0.004966
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Valencia",
+      "away": "Sociedad",
+      "lambda_home": 1.521,
+      "lambda_away": 1.239,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9367,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7619,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5202,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.2991,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1461,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5548,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4492,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.3513,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Monaco-Lens",
+    "date": "2026-09-18",
+    "competition": "F1",
+    "probs": {
+      "home": 0.4477617687841318,
+      "draw": 0.2521917651630932,
+      "away": 0.300046466052775
+    },
+    "market_probs": {
+      "home": 0.45067753211029726,
+      "draw": 0.25365776685613145,
+      "away": 0.2956647010335712
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Monaco",
+      "away": "Lens",
+      "lambda_home": 1.723,
+      "lambda_away": 1.582,
+      "market_weight": 0.92,
+      "odds_age_days": 1,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9576,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8476,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6403,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4206,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2382,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6577,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5138,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4691,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Paris FC-Strasbourg",
+    "date": "2026-09-19",
+    "competition": "F1",
+    "probs": {
+      "home": 0.48077121915962484,
+      "draw": 0.2495806607393631,
+      "away": 0.26964812010101213
+    },
+    "market_probs": {
+      "home": 0.4804061536574325,
+      "draw": 0.2549529813747264,
+      "away": 0.26464086496784117
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Paris FC",
+      "away": "Strasbourg",
+      "lambda_home": 1.837,
+      "lambda_away": 1.403,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9551,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8397,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6271,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4064,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2266,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6394,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.548,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4093,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Lyon-Rennes",
+    "date": "2026-09-19",
+    "competition": "F1",
+    "probs": {
+      "home": 0.4704655778713954,
+      "draw": 0.23903993621935504,
+      "away": 0.2904944859092496
+    },
+    "market_probs": {
+      "home": 0.45724094455680303,
+      "draw": 0.24432495152939224,
+      "away": 0.29843410391380487
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Lyon",
+      "away": "Rennes",
+      "lambda_home": 1.976,
+      "lambda_away": 1.416,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.961,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8577,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6571,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.44,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2544,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.6572,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5876,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4137,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Toulouse-Le Havre",
+    "date": "2026-09-19",
+    "competition": "F1",
+    "probs": {
+      "home": 0.5355026298154887,
+      "draw": 0.25527635759105216,
+      "away": 0.20922101259345927
+    },
+    "market_probs": {
+      "home": 0.5245445645827468,
+      "draw": 0.258246926604916,
+      "away": 0.21720850881233733
+    },
+    "predicted_score": "1-0",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Toulouse",
+      "away": "Le Havre",
+      "lambda_home": 1.697,
+      "lambda_away": 0.906,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9195,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7397,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.4814,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.2647,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.123,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.493,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.5059,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.2297,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Le Mans-Lorient",
+    "date": "2026-09-19",
+    "competition": "F1",
+    "probs": {
+      "home": 0.3549144701909416,
+      "draw": 0.2717813438885711,
+      "away": 0.37330418592048736
+    },
+    "market_probs": {
+      "home": 0.3502216660895771,
+      "draw": 0.28020878549116945,
+      "away": 0.3695695484192535
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Le Mans",
+      "away": "Lorient",
+      "lambda_home": 1.539,
+      "lambda_away": 1.572,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9493,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8229,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6002,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3775,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2036,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.628,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4551,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4659,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Angers-Troyes",
+    "date": "2026-09-19",
+    "competition": "F1",
+    "probs": {
+      "home": 0.4303576678248582,
+      "draw": 0.27779491386777727,
+      "away": 0.2918474183073645
+    },
+    "market_probs": {
+      "home": 0.42913374336694027,
+      "draw": 0.2849512663233426,
+      "away": 0.28591499030971707
+    },
+    "predicted_score": "2-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Angers",
+      "away": "Troyes",
+      "lambda_home": 1.564,
+      "lambda_away": 1.308,
+      "market_weight": 0.76,
+      "odds_age_days": 2,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9368,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7874,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5467,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.324,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1636,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5831,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4633,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.3759,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Auxerre-Brest",
+    "date": "2026-09-20",
+    "competition": "F1",
+    "probs": {
+      "home": 0.3567449520276489,
+      "draw": 0.26060431808342366,
+      "away": 0.38265072988892757
+    },
+    "market_probs": {
+      "home": 0.3422429395392758,
+      "draw": 0.26463122772119313,
+      "away": 0.3931258327395312
+    },
+    "predicted_score": "1-2",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Auxerre",
+      "away": "Brest",
+      "lambda_home": 1.477,
+      "lambda_away": 1.453,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.94,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7966,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.5601,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.3369,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.173,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.5973,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4344,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4262,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Nice-Lille",
+    "date": "2026-09-20",
+    "competition": "F1",
+    "probs": {
+      "home": 0.2669011500170015,
+      "draw": 0.2708135444465652,
+      "away": 0.46228530553643343
+    },
+    "market_probs": {
+      "home": 0.2557305903712972,
+      "draw": 0.2714827613799329,
+      "away": 0.47278664824877004
+    },
+    "predicted_score": "0-1",
+    "bets": [],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Nice",
+      "away": "Lille",
+      "lambda_home": 1.136,
+      "lambda_away": 1.459,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9183,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.7388,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.4799,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.263,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.1219,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.528,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.3141,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.4285,
+          "calibrated": false
+        }
+      }
+    }
+  },
+  {
+    "match": "Marseille-Paris SG",
+    "date": "2026-09-20",
+    "competition": "F1",
+    "probs": {
+      "home": 0.20337506371838848,
+      "draw": 0.19967710529595623,
+      "away": 0.5969478309856553
+    },
+    "market_probs": {
+      "home": 0.1468080119085782,
+      "draw": 0.18354887293832167,
+      "away": 0.6696431151531002
+    },
+    "predicted_score": "1-2",
+    "bets": [
+      {
+        "issue": "home",
+        "odds": 5.86,
+        "stake_pct": 0.009865
+      }
+    ],
+    "actual_score": null,
+    "actual_ht": null,
+    "meta": {
+      "model": "M5",
+      "home": "Marseille",
+      "away": "Paris SG",
+      "lambda_home": 1.492,
+      "lambda_away": 1.946,
+      "market_weight": 0.6,
+      "odds_age_days": 3,
+      "devig": "shin",
+      "exposure_factor": 1.0,
+      "correlated_exposure": false,
+      "no_odds_reason": null,
+      "lineup_adjustment": {
+        "applied": false
+      },
+      "derived_markets": {
+        "ou05": {
+          "p": 0.9625,
+          "calibrated": false
+        },
+        "ou15": {
+          "p": 0.8627,
+          "calibrated": false
+        },
+        "ou25": {
+          "p": 0.6658,
+          "calibrated": false
+        },
+        "ou35": {
+          "p": 0.4498,
+          "calibrated": false
+        },
+        "ou45": {
+          "p": 0.2628,
+          "calibrated": false
+        },
+        "btts": {
+          "p": 0.669,
+          "calibrated": false
+        },
+        "home_ov15": {
+          "p": 0.4394,
+          "calibrated": false
+        },
+        "away_ov15": {
+          "p": 0.5791,
+          "calibrated": false
+        }
+      }
+    }
   }
 ]
