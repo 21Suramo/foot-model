@@ -40,55 +40,20 @@ jobs:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python odds_snapshot.py --markets h2h --regions eu
 
+      # La récupération sur conflit de rebase (data/football.db, binaire,
+      # jamais fusionnable ligne à ligne) vit dans
+      # scripts/push_with_recovery.sh, partagée avec weekly.yml et testée
+      # par tests/test_workflows.py::TestPushWithRecoveryScript. Le rejeu
+      # (book_odds est une série temporelle en INSERT OR IGNORE : rejouer la
+      # capture sur la base déjà avancée par l'autre run est sûr, au pire
+      # coût d'un appel API en plus) a besoin d'ODDS_API_KEY comme la
+      # capture initiale.
       - name: Committer si de nouvelles lignes sont apparues dans book_odds
         env:
-          # Filet de sécurité ci-dessous : sur un conflit de rebase, on
-          # rejoue odds_snapshot.py, qui a besoin de la clé comme l'étape de
-          # capture initiale.
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- data/football.db; then
-            echo "Rien à committer (aucune nouvelle ligne capturée)."
-            exit 0
-          fi
-          git add data/football.db
-          git commit -m "odds-snapshot : nouveau snapshot book_odds ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-
-          # weekly.yml committe aussi data/football.db. Le groupe de
-          # concurrency ci-dessus sérialise déjà les deux workflows entre
-          # eux, mais ne protège pas contre un push manuel ou un autre
-          # déclencheur entretemps — filet de sécurité : pull --rebase avant
-          # chaque nouvel essai de push, jusqu'à 5 fois avec backoff. Un
-          # CONFLIT de rebase sur data/football.db (fichier SQLite binaire,
-          # jamais fusionnable ligne à ligne) ne se résout pas en éditant le
-          # diff — on abandonne le rebase, on repart de zéro sur le HEAD
-          # distant (reset --hard), puis on reprend un nouveau snapshot
-          # (book_odds est une série temporelle en INSERT OR IGNORE : rejouer
-          # la capture sur la base déjà avancée par l'autre run est sûr,
-          # au pire coût d'un appel API en plus) avant de recommitter.
-          attempt=0
-          until git push; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge 5 ]; then
-              echo "::error::push échoué après 5 tentatives (conflit persistant sur data/football.db)."
-              exit 1
-            fi
-            echo "push échoué (tentative $attempt/5)..."
-            sleep $((attempt * 5))
-            if git pull --rebase origin "$GITHUB_REF_NAME"; then
-              echo "rebase propre — nouvel essai de push."
-            else
-              echo "conflit de rebase — abandon, reset sur origin/$GITHUB_REF_NAME, rejeu du snapshot."
-              git rebase --abort || true
-              git reset --hard "origin/$GITHUB_REF_NAME"
-              python odds_snapshot.py --markets h2h --regions eu
-              if git diff --quiet -- data/football.db; then
-                echo "Plus rien à committer après resynchronisation (déjà couvert par l'autre run)."
-                exit 0
-              fi
-              git add data/football.db
-              git commit -m "odds-snapshot : nouveau snapshot book_odds ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-            fi
-          done
+          timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          scripts/push_with_recovery.sh \
+            "odds-snapshot : nouveau snapshot book_odds ($timestamp)" \
+            "python odds_snapshot.py --markets h2h --regions eu" \
+            data/football.db

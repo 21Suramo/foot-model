@@ -72,59 +72,31 @@ jobs:
       # est explicitement suivi (exception dans .gitignore, déjà committé par
       # odds-snapshot.yml) : rien n'empêchait de l'ajouter ici, l'oubli était
       # la seule cause.
+      #
+      # La récupération sur conflit de rebase (data/football.db, binaire,
+      # jamais fusionnable) vit dans scripts/push_with_recovery.sh, partagé
+      # avec odds_snapshot.yml et testé par
+      # tests/test_workflows.py::TestPushWithRecoveryScript — pas dupliquée
+      # ici. La "commande de rejeu" couvre les TROIS étapes qui écrivent
+      # dans les fichiers commités (pipeline --update, sync-results,
+      # report), pas seulement la base : un rejeu partiel committerait une
+      # base avancée avec un journal/rapport restés sur l'ancien état après
+      # le reset --hard. Seul pipeline.py --update est toléré en échec
+      # (`|| true`) : c'est sa garde anti-stagnation, pas une panne — voir
+      # l'étape "Refléter l'échec du pipeline" plus bas pour la réserve
+      # connue (cette tolérance ne couvre QUE le premier passage de
+      # pipeline.py --update dans l'étape dédiée ci-dessus ; si la garde se
+      # déclenche seulement PENDANT ce rejeu-ci, après un reset sur une base
+      # plus fraîche, ce cas précis n'est pas remonté séparément — accepté
+      # tel quel, chantier trop marginal pour la complexité que le remonter
+      # ajouterait).
       - name: Committer si la base, le journal ou le rapport ont changé
         id: commit
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- data/football.db data/production_journal.json reports/production_calibration.md; then
-            echo "Rien à committer."
-            echo "committed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git add data/football.db data/production_journal.json reports/production_calibration.md
-          git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
-
-          # odds-snapshot.yml committe aussi data/football.db. Le groupe de
-          # concurrency ci-dessus sérialise déjà les deux workflows entre
-          # eux, mais ne protège pas contre un push manuel ou un autre
-          # déclencheur entretemps — filet de sécurité : pull --rebase avant
-          # chaque nouvel essai de push, jusqu'à 5 fois avec backoff. Un
-          # rebase propre (l'autre commit ne touchait pas nos lignes) suffit
-          # à retenter directement ; un CONFLIT de rebase sur data/football.db
-          # (fichier SQLite binaire, jamais fusionnable ligne à ligne) ne se
-          # résout pas en éditant le diff — on abandonne le rebase, on
-          # repart de zéro sur le HEAD distant (reset --hard), puis on rejoue
-          # le calcul qui a produit nos changements (pipeline.py --update est
-          # un upsert idempotent : le rejouer sur la base déjà avancée par
-          # l'autre run ne fait que compléter ce qui manque encore) avant de
-          # recommitter.
-          attempt=0
-          until git push; do
-            attempt=$((attempt + 1))
-            if [ "$attempt" -ge 5 ]; then
-              echo "::error::push échoué après 5 tentatives (conflit persistant sur data/football.db)."
-              exit 1
-            fi
-            echo "push échoué (tentative $attempt/5)..."
-            sleep $((attempt * 5))
-            if git pull --rebase origin "$GITHUB_REF_NAME"; then
-              echo "rebase propre — nouvel essai de push."
-            else
-              echo "conflit de rebase — abandon, reset sur origin/$GITHUB_REF_NAME, rejeu de pipeline.py --update."
-              git rebase --abort || true
-              git reset --hard "origin/$GITHUB_REF_NAME"
-              python pipeline.py --update || true
-              if git diff --quiet -- data/football.db data/production_journal.json reports/production_calibration.md; then
-                echo "Plus rien à committer après resynchronisation (déjà couvert par l'autre run)."
-                echo "committed=false" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              git add data/football.db data/production_journal.json reports/production_calibration.md
-              git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
-            fi
-          done
-          echo "committed=true" >> "$GITHUB_OUTPUT"
+          scripts/push_with_recovery.sh \
+            "weekly-sync : mise à jour base + clôture résultats + rapport calibration" \
+            "python pipeline.py --update || true; python predict.py sync-results; python predict.py report" \
+            data/football.db data/production_journal.json reports/production_calibration.md
 
       # Échec silencieux constaté le 2026-09-21 : un run peut réussir sans
       # rien avancer (source sans nouvelle donnée, ou régression du pipeline)
