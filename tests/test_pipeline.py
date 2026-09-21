@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import check
 import db
 import footballdata
 import pipeline
@@ -207,6 +208,57 @@ class TestStagnationGuard(unittest.TestCase):
         # Deuxième run avec une date plus récente que la première (mais
         # encore > 5 j) : MAX(date) avance -> pas de stagnation.
         self.assertEqual(self._run(self._csv_dated(8)), 0)
+
+    # -- Pauses normales : intersaison et trêve internationale (revue 2026-09-21) --
+
+    def _insert_dummy_matches(self, league, season, dates_and_teams):
+        conn = db.connect(self.db_path)
+        for d, home, away in dates_and_teams:
+            conn.execute(
+                "INSERT INTO matches (date, league, season, home, away, fthg, ftag) "
+                "VALUES (?, ?, ?, ?, ?, 1, 0)",
+                (d.isoformat(), league, season, home, away))
+        conn.commit()
+        conn.close()
+
+    def test_no_alert_when_current_season_already_complete(self):
+        """Intersaison : la saison en cours a déjà tous ses matchs (autant
+        que check.EXPECTED en attend) -> plus aucune date à espérer, même
+        très vieille, ce n'est jamais une stagnation à signaler."""
+        expected_n = check.EXPECTED[("E0", footballdata.CURRENT_SEASON)]
+        old_date = datetime.date.today() - datetime.timedelta(days=45)
+        self._insert_dummy_matches(
+            "E0", footballdata.CURRENT_SEASON,
+            [(old_date, f"H{i}", f"A{i}") for i in range(expected_n)])
+        # Un run dont le CSV ne rapporte que cette même vieille date (rien
+        # de neuf) : la saison est déjà complète -> pas d'alerte malgré 45 j.
+        self.assertEqual(self._run(self._csv_dated(45)), 0)
+
+    def test_gap_within_historical_precedent_does_not_alert(self):
+        """Trêve internationale : un écart de 10 j sans nouveau match serait
+        une stagnation sous l'ancien seuil fixe de 5 j (cf.
+        test_two_stale_runs_in_a_row_fail), mais la saison précédente de
+        cette ligue a déjà connu une pause de 14 j en cours de saison -> 10 j
+        reste dans le précédent historique, pas d'alerte."""
+        prev = footballdata.SEASONS[footballdata.SEASONS.index(footballdata.CURRENT_SEASON) - 1]
+        d1 = datetime.date(2020, 9, 1)
+        self._insert_dummy_matches("E0", prev, [(d1, "P0H", "P0A"),
+                                                  (d1 + datetime.timedelta(days=14), "P1H", "P1A")])
+        csv_path = self._csv_dated(10)
+        self.assertEqual(self._run(csv_path), 0)   # premier run : avance (None -> date)
+        self.assertEqual(self._run(csv_path), 0)   # deuxième run : stagne à 10 j, <= précédent 14 j
+
+    def test_gap_beyond_historical_precedent_still_alerts(self):
+        """Même précédent historique (14 j) mais un écart courant de 20 j :
+        au-delà de tout ce que cette ligue a déjà connu en cours de saison
+        -> alerte, ce n'est plus une pause normale."""
+        prev = footballdata.SEASONS[footballdata.SEASONS.index(footballdata.CURRENT_SEASON) - 1]
+        d1 = datetime.date(2020, 9, 1)
+        self._insert_dummy_matches("E0", prev, [(d1, "P0H", "P0A"),
+                                                  (d1 + datetime.timedelta(days=14), "P1H", "P1A")])
+        csv_path = self._csv_dated(20)
+        self.assertEqual(self._run(csv_path), 0)   # premier run : avance
+        self.assertEqual(self._run(csv_path), 1)   # deuxième run : 20 j > précédent 14 j (et > 5 j)
 
 
 class TestUnderstat(unittest.TestCase):

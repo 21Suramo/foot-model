@@ -9,6 +9,7 @@ import logging
 import sys
 
 import aliases
+import check
 import db
 import footballdata
 import understat
@@ -26,6 +27,18 @@ log = logging.getLogger("pipeline")
 # encore vieux de plus de 5 jours (retard de publication connu de la
 # source, déjà documenté ailleurs) : ce n'est pas de la stagnation, c'est
 # une progression normale contrainte par la source.
+#
+# Deux pauses sont NORMALES et ne doivent jamais déclencher cette garde
+# (revue 2026-09-21) :
+# - intersaison : la saison en cours est déjà complète (autant de matchs en
+#   base que check.EXPECTED en attend) — aucune nouvelle date ne viendra
+#   plus jamais pour ce code de saison, ce n'est pas un pipeline bloqué ;
+# - pause internationale (trêves FIFA, ~10-14 jours plusieurs fois par
+#   saison) : le seuil fixe de 5 jours ne les distingue pas d'une vraie
+#   panne. On compare donc l'écart courant au plus grand écart déjà observé
+#   EN COURS DE SAISON (jamais à cheval sur un changement de saison) sur la
+#   dernière saison complète de cette ligue, et on ne s'alarme que si
+#   l'écart courant dépasse aussi ce précédent historique.
 STALE_DAYS_THRESHOLD = 5
 
 
@@ -34,6 +47,40 @@ def _max_date(conn, league, season):
         "SELECT MAX(date) FROM matches WHERE league = ? AND season = ?", (league, season)
     ).fetchone()
     return row[0] if row else None
+
+
+def _season_complete(conn, league, season):
+    """True si la saison a déjà tous ses matchs en base (intersaison) —
+    check.EXPECTED est la même source de vérité que check.py, pas une
+    deuxième liste à tenir à jour en parallèle."""
+    expected = check.EXPECTED.get((league, season))
+    if expected is None:
+        return False
+    n = conn.execute(
+        "SELECT COUNT(*) FROM matches WHERE league = ? AND season = ?", (league, season)
+    ).fetchone()[0]
+    return n >= expected
+
+
+def _previous_season(season):
+    idx = footballdata.SEASONS.index(season)
+    return footballdata.SEASONS[idx - 1] if idx > 0 else None
+
+
+def _historical_max_gap(conn, league, season):
+    """Plus grand écart (jours) entre deux dates de matchs CONSÉCUTIVES
+    d'une même saison déjà complète — jamais à cheval sur deux saisons
+    (l'écart d'intersaison, plusieurs mois, n'a rien à voir avec une pause
+    internationale en cours de saison). 0 si la saison est absente/trop
+    courte en base pour donner un écart."""
+    rows = conn.execute(
+        "SELECT DISTINCT date FROM matches WHERE league = ? AND season = ? ORDER BY date",
+        (league, season),
+    ).fetchall()
+    dates = [datetime.date.fromisoformat(r[0]) for r in rows]
+    if len(dates) < 2:
+        return 0
+    return max((b - a).days for a, b in zip(dates, dates[1:]))
 
 
 def update_league_season(conn, league, season, force=False):
@@ -121,16 +168,21 @@ def main(argv=None):
             after = _max_date(conn, league, footballdata.CURRENT_SEASON)
             if after is None or after != max_date_before.get(league):
                 continue  # pas de donnée, ou ça a avancé : rien à signaler
+            if _season_complete(conn, league, footballdata.CURRENT_SEASON):
+                continue  # intersaison : plus aucune date à attendre pour cette saison
             days = (today - datetime.date.fromisoformat(after)).days
-            if days > STALE_DAYS_THRESHOLD:
-                stagnant.append((league, after, days))
+            prev_season = _previous_season(footballdata.CURRENT_SEASON)
+            historical_gap = _historical_max_gap(conn, league, prev_season) if prev_season else 0
+            threshold = max(STALE_DAYS_THRESHOLD, historical_gap)
+            if days > threshold:
+                stagnant.append((league, after, days, threshold))
     conn.close()
 
     if stagnant:
-        for league, max_date, days in stagnant:
-            log.error("%s : MAX(date)=%s (%d j) n'a pas avancé pour la saison en cours %s — "
-                      "vérifier la source football-data.co.uk ou le pipeline",
-                      league, max_date, days, footballdata.CURRENT_SEASON)
+        for league, max_date, days, threshold in stagnant:
+            log.error("%s : MAX(date)=%s (%d j, seuil %d j) n'a pas avancé pour la saison en "
+                      "cours %s — vérifier la source football-data.co.uk ou le pipeline",
+                      league, max_date, days, threshold, footballdata.CURRENT_SEASON)
         return 1
     log.info("Terminé.")
     return 0
