@@ -1,6 +1,7 @@
 import datetime
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import db
 import footballdata
+import pipeline
 import understat
 import xgjoin
 
@@ -103,6 +105,108 @@ class TestDb(unittest.TestCase):
         db.upsert_match(self.conn, self._row())  # re-run du pipeline
         row = self.conn.execute("SELECT xg_home, xg_away FROM matches").fetchone()
         self.assertEqual((row["xg_home"], row["xg_away"]), (0.5, 2.8))
+
+
+class TestUpdateLeagueSeason(unittest.TestCase):
+    """Observabilité (audit 2026-09-21) : pipeline.update_league_season doit
+    distinguer lues/insérées/mises à jour/ignorées et exposer MAX(date) —
+    diagnostic direct de ce qu'un run a réellement fait, plutôt qu'un simple
+    'N matchs upsertés' qui ne dit pas si la base a bougé."""
+
+    def setUp(self):
+        self.conn = db.connect(":memory:")
+        self._orig_fetch = footballdata.fetch
+        self._orig_understat_fetch = understat.fetch
+        footballdata.fetch = lambda league, season, force=False: FIXTURES / "fd_modern.csv"
+        understat.fetch = lambda league, season, current, force=False: None
+
+    def tearDown(self):
+        footballdata.fetch = self._orig_fetch
+        understat.fetch = self._orig_understat_fetch
+
+    def test_first_run_all_inserted(self):
+        stats = pipeline.update_league_season(self.conn, "E0", "2324")
+        self.assertEqual(stats["read"], 2)
+        self.assertEqual(stats["inserted"], 2)
+        self.assertEqual(stats["updated"], 0)
+        self.assertEqual(stats["ignored"], 0)
+        self.assertEqual(stats["max_date"], "2023-08-12")
+
+    def test_rerun_identical_data_is_ignored_not_reinserted(self):
+        pipeline.update_league_season(self.conn, "E0", "2324")
+        stats = pipeline.update_league_season(self.conn, "E0", "2324")
+        self.assertEqual(stats["inserted"], 0)
+        self.assertEqual(stats["updated"], 0)
+        self.assertEqual(stats["ignored"], 2)
+
+    def test_changed_row_counts_as_updated(self):
+        pipeline.update_league_season(self.conn, "E0", "2324")
+        # Une ligne diverge de ce que le CSV va reposer (ex. cote corrigée à
+        # la source) -> classée "mise à jour", pas "ignorée".
+        db.upsert_match(self.conn, {
+            "date": "2023-08-11", "league": "E0", "season": "2324",
+            "home": "Burnley", "away": "Man City", "fthg": 0, "ftag": 3,
+            "odds_h": 8.5, "odds_d": 5.5, "odds_a": 1.36, "odds_source": "pinnacle_open",
+        })
+        stats = pipeline.update_league_season(self.conn, "E0", "2324")
+        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["ignored"], 1)
+
+    def test_missing_csv_returns_none(self):
+        footballdata.fetch = lambda league, season, force=False: None
+        self.assertIsNone(pipeline.update_league_season(self.conn, "E0", "2324"))
+
+
+class TestStagnationGuard(unittest.TestCase):
+    """Garde anti-stagnation (audit 2026-09-21, football.db figée au 06-07/09
+    pendant deux semaines sans qu'aucun run n'échoue). pipeline.main doit
+    sortir en échec si MAX(date) de la saison en cours n'avance pas d'un run
+    à l'autre alors que la dernière date connue remonte à plus de
+    STALE_DAYS_THRESHOLD jours — mais rester en succès si ça avance, même si
+    le résultat reste vieux (retard de publication normal de la source)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmpdir.name) / "test.db"
+        self._orig_fetch = footballdata.fetch
+        self._orig_understat_fetch = understat.fetch
+        understat.fetch = lambda league, season, current, force=False: None
+
+    def tearDown(self):
+        footballdata.fetch = self._orig_fetch
+        understat.fetch = self._orig_understat_fetch
+        self.tmpdir.cleanup()
+
+    def _csv_dated(self, days_old):
+        old_date = (datetime.date.today() - datetime.timedelta(days=days_old)).strftime("%d/%m/%Y")
+        path = Path(self.tmpdir.name) / f"stale_{days_old}.csv"
+        path.write_text(f"Div,Date,HomeTeam,AwayTeam,FTHG,FTAG\nE0,{old_date},A,B,1,0\n")
+        return path
+
+    def _run(self, csv_path):
+        footballdata.fetch = lambda league, season, force=False: csv_path
+        return pipeline.main(["--update", "--league", "E0", "--season", footballdata.CURRENT_SEASON,
+                              "--db", str(self.db_path)])
+
+    def test_first_appearance_is_not_stagnation(self):
+        # None -> une date : ça avance, même si cette date est déjà vieille.
+        self.assertEqual(self._run(self._csv_dated(10)), 0)
+
+    def test_two_stale_runs_in_a_row_fail(self):
+        csv_path = self._csv_dated(10)
+        self.assertEqual(self._run(csv_path), 0)   # premier run : avance (None -> date)
+        self.assertEqual(self._run(csv_path), 1)   # deuxième run : rien de neuf, et > 5 j
+
+    def test_two_recent_runs_in_a_row_succeed(self):
+        csv_path = self._csv_dated(2)   # sous le seuil de 5 j
+        self.assertEqual(self._run(csv_path), 0)
+        self.assertEqual(self._run(csv_path), 0)
+
+    def test_advancing_run_succeeds_even_if_still_old(self):
+        self.assertEqual(self._run(self._csv_dated(10)), 0)
+        # Deuxième run avec une date plus récente que la première (mais
+        # encore > 5 j) : MAX(date) avance -> pas de stagnation.
+        self.assertEqual(self._run(self._csv_dated(8)), 0)
 
 
 class TestUnderstat(unittest.TestCase):
