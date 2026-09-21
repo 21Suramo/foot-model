@@ -24,7 +24,17 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements.txt
 
+      # continue-on-error : audit du 2026-09-21, pipeline.py --update peut
+      # désormais sortir en échec (garde anti-stagnation, cf. pipeline.py) si
+      # MAX(date) n'avance pas pour la saison en cours alors que des matchs
+      # ont eu lieu il y a plus de 5 jours. On laisse quand même tourner
+      # sync-results/report/commit sur ce que le pipeline a pu avancer avant
+      # de détecter le problème ; le job échoue explicitement à la toute fin
+      # (étape "Refléter l'échec du pipeline") pour ne pas cacher le signal
+      # derrière un badge vert.
       - name: Mettre à jour la base (football-data + Understat)
+        id: pipeline
+        continue-on-error: true
         run: python pipeline.py --update
 
       - name: Clôturer les résultats de la semaine précédente
@@ -42,14 +52,53 @@ jobs:
             data/production_journal.json
           retention-days: 90
 
-      - name: Committer si le journal ou le rapport ont changé
+      # Bug corrigé le 2026-09-21 (audit) : cette étape ne committait
+      # jusqu'ici QUE production_journal.json/production_calibration.md —
+      # jamais data/football.db. pipeline.py --update avançait donc bien la
+      # base dans le checkout éphémère de CHAQUE run, mais ce progrès était
+      # perdu à la fin du job : le football.db committé dans le repo ne
+      # bougeait jamais via cette automatisation (seuls des runs manuels
+      # avaient fait avancer les dates réellement committées). data/football.db
+      # est explicitement suivi (exception dans .gitignore, déjà committé par
+      # odds-snapshot.yml) : rien n'empêchait de l'ajouter ici, l'oubli était
+      # la seule cause.
+      - name: Committer si la base, le journal ou le rapport ont changé
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- data/production_journal.json reports/production_calibration.md; then
+          if git diff --quiet -- data/football.db data/production_journal.json reports/production_calibration.md; then
             echo "Rien à committer."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git add data/production_journal.json reports/production_calibration.md
+          git add data/football.db data/production_journal.json reports/production_calibration.md
           git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
           git push
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+      # Échec silencieux constaté le 2026-09-21 : un run peut réussir sans
+      # rien avancer (source sans nouvelle donnée, ou régression du pipeline)
+      # et ça ne se voyait nulle part. Ouvre une issue (ou commente celle déjà
+      # ouverte) plutôt que de laisser ce silence invisible d'un lundi à
+      # l'autre. Ne bloque jamais sur un label qui n'existerait pas dans le
+      # repo (aucun --label).
+      - name: Alerter si aucun commit n'a été produit
+        if: steps.commit.outputs.committed != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="weekly-sync : aucun commit produit"
+          BODY="Run $(date -u +%Y-%m-%dT%H:%M:%SZ) — pipeline.py --update + sync-results + report n'ont produit AUCUN changement committable (football.db, journal et rapport identiques après le run). Soit football-data.co.uk n'a rien de nouveau à publier pour la saison en cours, soit le pipeline ne progresse plus — vérifier les logs : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: Refléter l'échec du pipeline (garde anti-stagnation)
+        if: steps.pipeline.outcome == 'failure'
+        run: |
+          echo "::error::pipeline.py --update a détecté une stagnation (MAX(date) n'a pas avancé alors que des matchs ont eu lieu il y a plus de 5 jours) — voir le log de l'étape 'Mettre à jour la base'."
+          exit 1
