@@ -11,6 +11,16 @@ on:
 permissions:
   contents: write
 
+# Groupe PARTAGÉ avec odds-snapshot.yml (même nom exact) : les deux workflows
+# committent data/football.db, GitHub Actions sérialise donc leurs runs entre
+# eux (jamais deux push concurrents sur ce fichier), quel que soit celui qui
+# a déclenché en premier. cancel-in-progress: false — un run en cours
+# représente une vraie capture de données, jamais du travail jetable qu'on
+# voudrait annuler au profit du suivant.
+concurrency:
+  group: football-db-writers
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -74,7 +84,21 @@ jobs:
           fi
           git add data/football.db data/production_journal.json reports/production_calibration.md
           git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
-          git push
+          # odds-snapshot.yml committe aussi data/football.db. Le groupe de
+          # concurrency ci-dessus sérialise déjà les deux workflows entre
+          # eux, mais ne protège pas contre un push manuel ou un autre
+          # déclencheur entretemps — filet de sécurité : pull --rebase puis
+          # nouvel essai, jusqu'à 5 fois avec backoff.
+          attempt=0
+          until git pull --rebase origin "$GITHUB_REF_NAME" && git push; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 5 ]; then
+              echo "::error::push échoué après 5 tentatives (conflit persistant sur data/football.db)."
+              exit 1
+            fi
+            echo "pull --rebase + push échoué (tentative $attempt/5) — nouvel essai dans $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
           echo "committed=true" >> "$GITHUB_OUTPUT"
 
       # Échec silencieux constaté le 2026-09-21 : un run peut réussir sans

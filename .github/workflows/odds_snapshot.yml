@@ -15,6 +15,13 @@ on:
 permissions:
   contents: write
 
+# Groupe PARTAGÉ avec weekly.yml (même nom exact, voir ce fichier pour le
+# détail) : les deux committent data/football.db, sérialisés entre eux
+# plutôt que de risquer un push concurrent sur ce fichier.
+concurrency:
+  group: football-db-writers
+  cancel-in-progress: false
+
 jobs:
   snapshot:
     runs-on: ubuntu-latest
@@ -43,4 +50,18 @@ jobs:
           fi
           git add data/football.db
           git commit -m "odds-snapshot : nouveau snapshot book_odds ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
-          git push
+          # weekly.yml committe aussi data/football.db. Le groupe de
+          # concurrency ci-dessus sérialise déjà les deux workflows entre
+          # eux, mais ne protège pas contre un push manuel ou un autre
+          # déclencheur entretemps — filet de sécurité : pull --rebase puis
+          # nouvel essai, jusqu'à 5 fois avec backoff.
+          attempt=0
+          until git pull --rebase origin "$GITHUB_REF_NAME" && git push; do
+            attempt=$((attempt + 1))
+            if [ "$attempt" -ge 5 ]; then
+              echo "::error::push échoué après 5 tentatives (conflit persistant sur data/football.db)."
+              exit 1
+            fi
+            echo "pull --rebase + push échoué (tentative $attempt/5) — nouvel essai dans $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
