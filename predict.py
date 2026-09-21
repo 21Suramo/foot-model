@@ -1059,6 +1059,14 @@ def log_prediction(path, res, no_stake=False):
     for i, e in enumerate(entries):
         if (e["match"] == match and e["competition"] == res["league"]
                 and e.get("actual_score") is None and _entry_season(e) == season):
+            # Ré-run sur une entrée déjà journalisée (--lineup-adjustment,
+            # cotes rafraîchies...) : logged_at décrit le PREMIER passage de
+            # ce match dans le journal, pas ce ré-run. On le préserve tel
+            # quel, y compris son absence sur une entrée créée avant
+            # l'introduction de ce champ (audit 2026-09-21) — jamais
+            # fabriqué a posteriori pour une entrée ancienne.
+            if "logged_at" in e:
+                entry["logged_at"] = e["logged_at"]
             if e.get("bets"):
                 # Le premier run à avoir posé des paris théoriques fixe la
                 # "cote prise" (bets[].odds) que le CLV (M5.2/M7) compare à la
@@ -1078,6 +1086,7 @@ def log_prediction(path, res, no_stake=False):
             entries[i] = entry
             break
     else:
+        entry["logged_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         entries.append(entry)
     save_journal(path, entries)
     return entry

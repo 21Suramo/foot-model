@@ -216,6 +216,45 @@ class TestJournal(unittest.TestCase):
             entries = json.loads(path.read_text())
             self.assertEqual(len(entries), 2)
 
+    def test_new_entry_gets_logged_at_utc_iso(self):
+        """Audit 2026-09-21 : logged_at doit être posé sur une entrée neuve,
+        en UTC ISO, et rester stable si le même match est journalisé une
+        deuxième fois (ré-run --lineup-adjustment, cotes rafraîchies...)."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            before = datetime.datetime.now(datetime.timezone.utc)
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15"))
+            after = datetime.datetime.now(datetime.timezone.utc)
+            entries = json.loads(path.read_text())
+            self.assertIn("logged_at", entries[0])
+            logged_at = datetime.datetime.fromisoformat(entries[0]["logged_at"])
+            self.assertLessEqual(before, logged_at)
+            self.assertLessEqual(logged_at, after)
+
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15"))
+            entries = json.loads(path.read_text())
+            self.assertEqual(entries[0]["logged_at"], entries[0]["logged_at"])
+            self.assertEqual(
+                datetime.datetime.fromisoformat(entries[0]["logged_at"]), logged_at)
+
+    def test_legacy_entry_without_logged_at_is_not_backfilled_on_rerun(self):
+        """Une entrée créée avant l'introduction de ce champ (les 144 entrées
+        actuelles de production_journal.json) ne doit PAS se voir attribuer un
+        logged_at fabriqué a posteriori quand un ré-run l'écrase — on ne sait
+        pas réellement quand elle a été journalisée la première fois."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "j.json"
+            legacy = self._res("A", "B", "2026-08-15")
+            predict.log_prediction(path, legacy)
+            entries = json.loads(path.read_text())
+            del entries[0]["logged_at"]
+            path.write_text(json.dumps(entries))
+
+            predict.log_prediction(path, self._res("A", "B", "2026-08-15"))
+            entries = json.loads(path.read_text())
+            self.assertEqual(len(entries), 1)
+            self.assertNotIn("logged_at", entries[0])
+
     def test_result_settles_latest_unsettled(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "j.json"
