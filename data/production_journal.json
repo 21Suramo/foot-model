@@ -2717,16 +2717,22 @@
       {
         "issue": "home",
         "odds": 4.2,
-        "stake_pct": 0.004721
+        "stake_pct": 0.004721,
+        "realized_pct": -0.004721,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": 0.029412
       },
       {
         "issue": "draw",
         "odds": 3.8,
-        "stake_pct": 0.001764
+        "stake_pct": 0.001764,
+        "realized_pct": -0.001764,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.002625
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-5",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "home": "Coventry",
@@ -2735,6 +2741,12 @@
       "lambda_away": 1.422,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 3.71,
+      "draw": 3.78,
+      "away": 1.91,
+      "source": "avg_close"
     }
   },
   {
@@ -2756,11 +2768,14 @@
       {
         "issue": "home",
         "odds": 3.18,
-        "stake_pct": 0.000149
+        "stake_pct": 0.000149,
+        "realized_pct": -0.000149,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": 0.006329
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Man United",
@@ -2769,6 +2784,12 @@
       "lambda_away": 1.673,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 2.95,
+      "draw": 3.76,
+      "away": 2.2,
+      "source": "avg_close"
     }
   },
   {
@@ -2790,11 +2811,14 @@
       {
         "issue": "home",
         "odds": 5.1,
-        "stake_pct": 0.049931
+        "stake_pct": 0.049931,
+        "realized_pct": 0.204717,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": 1.188841
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "4-1",
+    "actual_ht": "3-0",
     "meta": {
       "model": "M5",
       "home": "Leeds",
@@ -2803,6 +2827,12 @@
       "lambda_away": 1.409,
       "market_weight": 0.28,
       "odds_age_days": 5
+    },
+    "closing_odds": {
+      "home": 2.3,
+      "draw": 3.46,
+      "away": 2.98,
+      "source": "avg_close"
     }
   },
   {
@@ -2983,8 +3013,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Celta",
@@ -2993,6 +3023,12 @@
       "lambda_away": 0.78,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 1.68,
+      "draw": 3.65,
+      "away": 5.23,
+      "source": "avg_close"
     }
   },
   {
@@ -3014,16 +3050,22 @@
       {
         "issue": "home",
         "odds": 13.4,
-        "stake_pct": 0.016323
+        "stake_pct": 0.016323,
+        "realized_pct": -0.016323,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.046942
       },
       {
         "issue": "draw",
         "odds": 7.0,
-        "stake_pct": 0.004781
+        "stake_pct": 0.004781,
+        "realized_pct": -0.004781,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.237473
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-4",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "home": "Levante",
@@ -3032,6 +3074,12 @@
       "lambda_away": 2.397,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 12.0,
+      "draw": 7.97,
+      "away": 1.18,
+      "source": "avg_close"
     }
   },
   {
@@ -3053,11 +3101,14 @@
       {
         "issue": "draw",
         "odds": 3.9,
-        "stake_pct": 0.005213
+        "stake_pct": 0.005213,
+        "realized_pct": 0.015118,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": 0.368421
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Getafe",
@@ -3066,6 +3117,12 @@
       "lambda_away": 0.71,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 2.54,
+      "draw": 2.89,
+      "away": 3.11,
+      "source": "avg_close"
     }
   },
   {
@@ -3087,11 +3144,14 @@
       {
         "issue": "home",
         "odds": 3.27,
-        "stake_pct": 0.013624
+        "stake_pct": 0.013624,
+        "realized_pct": -0.013624,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": 0.116041
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-3",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Sociedad",
@@ -3100,6 +3160,12 @@
       "lambda_away": 1.552,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 3.32,
+      "draw": 3.55,
+      "away": 2.08,
+      "source": "avg_close"
     }
   },
   {
@@ -3121,11 +3187,14 @@
       {
         "issue": "home",
         "odds": 1.9,
-        "stake_pct": 0.006607
+        "stake_pct": 0.006607,
+        "realized_pct": -0.006607,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.025641
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-2",
+    "actual_ht": "1-2",
     "meta": {
       "model": "M5",
       "home": "Villarreal",
@@ -3134,6 +3203,12 @@
       "lambda_away": 1.255,
       "market_weight": 0.28,
       "odds_age_days": 5
+    },
+    "closing_odds": {
+      "home": 1.93,
+      "draw": 3.96,
+      "away": 3.46,
+      "source": "avg_close"
     }
   },
   {
@@ -3328,11 +3403,14 @@
       {
         "issue": "away",
         "odds": 1.62,
-        "stake_pct": 0.010849
+        "stake_pct": 0.010849,
+        "realized_pct": -0.010849,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.04142
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-2",
+    "actual_ht": "2-1",
     "meta": {
       "model": "M5",
       "home": "Le Mans",
@@ -3341,6 +3419,12 @@
       "lambda_away": 2.335,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 4.79,
+      "draw": 4.3,
+      "away": 1.61,
+      "source": "avg_close"
     }
   },
   {
@@ -3359,8 +3443,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Lille",
@@ -3369,6 +3453,12 @@
       "lambda_away": 0.594,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 1.48,
+      "draw": 4.57,
+      "away": 6.02,
+      "source": "avg_close"
     }
   },
   {
@@ -3390,16 +3480,22 @@
       {
         "issue": "home",
         "odds": 7.88,
-        "stake_pct": 0.004132
+        "stake_pct": 0.004132,
+        "realized_pct": -0.004132,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.181724
       },
       {
         "issue": "draw",
         "odds": 5.61,
-        "stake_pct": 0.000124
+        "stake_pct": 0.000124,
+        "realized_pct": -0.000124,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.126168
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "home": "Brest",
@@ -3408,6 +3504,12 @@
       "lambda_away": 2.207,
       "market_weight": 0.44,
       "odds_age_days": 4
+    },
+    "closing_odds": {
+      "home": 10.7,
+      "draw": 6.86,
+      "away": 1.22,
+      "source": "avg_close"
     }
   },
   {
