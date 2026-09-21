@@ -97,17 +97,68 @@ class TestConcurrencyAndRebaseRetry(unittest.TestCase):
                                f"{name} : un run en cours (capture réelle de données) ne "
                                f"doit jamais être annulé au profit du suivant")
 
-    def test_push_is_preceded_by_pull_rebase_with_retry(self):
+    def _push_retry_block(self, text):
+        # Le corps de la boucle "until git push; do ... done" du filet de
+        # sécurité, isolé du reste du fichier (en particulier de l'étape de
+        # capture initiale, qui invoque aussi pipeline.py/odds_snapshot.py).
+        m = re.search(r"until git push; do\n(.*?)\n\s*done\n", text, re.S)
+        self.assertIsNotNone(m, "boucle 'until git push; do ... done' introuvable")
+        return m.group(1)
+
+    def test_push_is_retried_with_pull_rebase_and_backoff(self):
         for name, text in self.texts.items():
             with self.subTest(workflow=name):
-                self.assertIn("git pull --rebase", text,
-                               f"{name} : pull --rebase manquant avant le push")
-                # Retry effectif : une boucle qui englobe le pull --rebase ET
-                # le push, pas un pull isolé sans nouvel essai en cas d'échec.
-                self.assertRegex(text, r"until git pull --rebase.*&&\s*git push",
-                                  f"{name} : le push doit être retenté après un pull --rebase, "
-                                  f"pas juste précédé d'un pull isolé")
-                self.assertIn("sleep", text, f"{name} : pas de backoff entre les tentatives")
+                block = self._push_retry_block(text)
+                self.assertIn("git pull --rebase", block,
+                               f"{name} : pull --rebase manquant dans la boucle de retry")
+                self.assertIn("sleep", block, f"{name} : pas de backoff entre les tentatives")
+                self.assertIn('if [ "$attempt" -ge 5 ]', text,
+                               f"{name} : pas de plafond explicite à 5 tentatives")
+
+    def test_rebase_conflict_resets_and_redoes_the_work_before_recommitting(self):
+        """Revue 2026-09-21 : data/football.db est un fichier SQLite binaire,
+        jamais fusionnable ligne à ligne — un CONFLIT de git pull --rebase
+        dessus ne peut pas se résoudre en éditant un diff. La récupération
+        attendue : abandonner le rebase, repartir du HEAD distant à jour
+        (reset --hard), rejouer la commande qui a produit nos changements
+        (idempotente dans les deux cas : upsert pour pipeline.py --update,
+        INSERT OR IGNORE série temporelle pour odds_snapshot.py), puis
+        recommitter — jamais tenter de résoudre le conflit binaire lui-même."""
+        redo_command = {
+            "weekly.yml": "python pipeline.py --update",
+            "odds_snapshot.yml": "python odds_snapshot.py",
+        }
+        for name, text in self.texts.items():
+            with self.subTest(workflow=name):
+                block = self._push_retry_block(text)
+                abort_pos = block.find("git rebase --abort")
+                reset_pos = block.find("git reset --hard")
+                redo_pos = block.find(redo_command[name])
+                recommit_pos = block.rfind("git commit")
+                self.assertNotEqual(abort_pos, -1, f"{name} : git rebase --abort manquant")
+                self.assertNotEqual(reset_pos, -1, f"{name} : git reset --hard manquant")
+                self.assertIn("origin/$GITHUB_REF_NAME", block,
+                               f"{name} : le reset doit cibler la branche distante à jour, "
+                               f"pas un état local potentiellement périmé")
+                self.assertNotEqual(redo_pos, -1,
+                                     f"{name} : {redo_command[name]} doit être rejoué après le reset "
+                                     f"(sans ça, le commit suivant ne capturerait rien de neuf)")
+                self.assertNotEqual(recommit_pos, -1, f"{name} : recommit manquant après le rejeu")
+                self.assertTrue(
+                    abort_pos < reset_pos < redo_pos < recommit_pos,
+                    f"{name} : ordre attendu rebase --abort -> reset --hard -> rejeu -> "
+                    f"recommit, positions trouvées {(abort_pos, reset_pos, redo_pos, recommit_pos)}")
+
+    def test_rebase_conflict_recovery_never_touches_football_db_by_hand(self):
+        # Garde-fou négatif : la récupération ne doit jamais tenter de
+        # merger/éditer le binaire elle-même (ex. git checkout --theirs/-ours
+        # sur data/football.db), seulement reset --hard + rejeu.
+        for name, text in self.texts.items():
+            with self.subTest(workflow=name):
+                block = self._push_retry_block(text)
+                self.assertNotIn("--ours", block)
+                self.assertNotIn("--theirs", block)
+                self.assertNotIn("git checkout data/football.db", block)
 
 
 if __name__ == "__main__":

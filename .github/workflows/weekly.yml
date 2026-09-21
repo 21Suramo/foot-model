@@ -84,20 +84,45 @@ jobs:
           fi
           git add data/football.db data/production_journal.json reports/production_calibration.md
           git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
+
           # odds-snapshot.yml committe aussi data/football.db. Le groupe de
           # concurrency ci-dessus sérialise déjà les deux workflows entre
           # eux, mais ne protège pas contre un push manuel ou un autre
-          # déclencheur entretemps — filet de sécurité : pull --rebase puis
-          # nouvel essai, jusqu'à 5 fois avec backoff.
+          # déclencheur entretemps — filet de sécurité : pull --rebase avant
+          # chaque nouvel essai de push, jusqu'à 5 fois avec backoff. Un
+          # rebase propre (l'autre commit ne touchait pas nos lignes) suffit
+          # à retenter directement ; un CONFLIT de rebase sur data/football.db
+          # (fichier SQLite binaire, jamais fusionnable ligne à ligne) ne se
+          # résout pas en éditant le diff — on abandonne le rebase, on
+          # repart de zéro sur le HEAD distant (reset --hard), puis on rejoue
+          # le calcul qui a produit nos changements (pipeline.py --update est
+          # un upsert idempotent : le rejouer sur la base déjà avancée par
+          # l'autre run ne fait que compléter ce qui manque encore) avant de
+          # recommitter.
           attempt=0
-          until git pull --rebase origin "$GITHUB_REF_NAME" && git push; do
+          until git push; do
             attempt=$((attempt + 1))
             if [ "$attempt" -ge 5 ]; then
               echo "::error::push échoué après 5 tentatives (conflit persistant sur data/football.db)."
               exit 1
             fi
-            echo "pull --rebase + push échoué (tentative $attempt/5) — nouvel essai dans $((attempt * 5))s..."
+            echo "push échoué (tentative $attempt/5)..."
             sleep $((attempt * 5))
+            if git pull --rebase origin "$GITHUB_REF_NAME"; then
+              echo "rebase propre — nouvel essai de push."
+            else
+              echo "conflit de rebase — abandon, reset sur origin/$GITHUB_REF_NAME, rejeu de pipeline.py --update."
+              git rebase --abort || true
+              git reset --hard "origin/$GITHUB_REF_NAME"
+              python pipeline.py --update || true
+              if git diff --quiet -- data/football.db data/production_journal.json reports/production_calibration.md; then
+                echo "Plus rien à committer après resynchronisation (déjà couvert par l'autre run)."
+                echo "committed=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              git add data/football.db data/production_journal.json reports/production_calibration.md
+              git commit -m "weekly-sync : mise à jour base + clôture résultats + rapport calibration"
+            fi
           done
           echo "committed=true" >> "$GITHUB_OUTPUT"
 
