@@ -64,6 +64,53 @@ class TestWeeklySyncWorkflow(unittest.TestCase):
         self.assertIn("steps.pipeline.outcome == 'failure'", self.text)
 
 
+class TestOddsSnapshotAlert(unittest.TestCase):
+    """Audit 2026-09-22 : odds_snapshot.yml n'avait aucune alerte si la capture
+    échouait silencieusement (clé invalide, quota épuisé) — contrairement à
+    weekly.yml (alerte "rien committé", ajoutée le 2026-09-21). Alerter sur
+    "rien committé" n'aurait pas eu de sens ici (2 runs/jour, souvent rien de
+    neuf à capturer — le cas normal, pas une panne) : le signal pertinent est
+    l'échec de la capture elle-même."""
+
+    def setUp(self):
+        self.text = ODDS_SNAPSHOT_YML.read_text()
+
+    def test_alerts_on_capture_failure(self):
+        self.assertIn("if: failure()", self.text)
+        self.assertIn("gh issue", self.text)
+
+    def test_alert_step_precedes_commit_step(self):
+        # L'alerte doit se déclencher même si l'étape de capture a échoué —
+        # donc placée avant "Committer" (que le job saute de toute façon par
+        # défaut sur un échec antérieur, sans "if:" particulier à vérifier ici).
+        alert_pos = self.text.find("if: failure()")
+        commit_pos = self.text.find("- name: Committer")
+        self.assertNotEqual(alert_pos, -1)
+        self.assertNotEqual(commit_pos, -1)
+        self.assertLess(alert_pos, commit_pos)
+
+
+class TestIssuesPermission(unittest.TestCase):
+    """gh issue create/comment (weekly.yml depuis le 2026-09-21,
+    odds_snapshot.yml depuis le 2026-09-22) exige `issues: write` — trouvé
+    absent des deux fichiers en auditant odds_snapshot.yml (2026-09-22) :
+    déclarer `permissions:` du tout restreint tout scope non listé à `none`,
+    donc l'alerte de weekly.yml aurait échoué en 403 sans jamais avoir été
+    testée en conditions réelles (pas encore déclenchée depuis son ajout)."""
+
+    def test_both_workflows_declare_issues_write(self):
+        for path in (WEEKLY_YML, ODDS_SNAPSHOT_YML):
+            with self.subTest(workflow=path.name):
+                text = path.read_text()
+                self.assertIn("gh issue", text, f"{path.name} : n'utilise plus gh issue ?")
+                m = re.search(r"^permissions:\n(.*?)(?=\n\S|\Z)", text, re.M | re.S)
+                self.assertIsNotNone(m, f"{path.name} : bloc permissions introuvable")
+                self.assertIn("issues: write", m.group(1),
+                               f"{path.name} : issues: write manquant — gh issue create/comment "
+                               f"échouerait en 403 (permissions: restreint tout scope non listé "
+                               f"à none)")
+
+
 def _concurrency_group(text):
     m = re.search(r"^concurrency:\s*\n\s+group:\s*(\S+)", text, re.M)
     return m.group(1) if m else None

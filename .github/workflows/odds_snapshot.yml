@@ -14,6 +14,9 @@ on:
 
 permissions:
   contents: write
+  # issues: write requis par l'étape d'alerte ci-dessous (gh issue create/comment) —
+  # déclarer `permissions:` du tout restreint tout scope non listé à `none`.
+  issues: write
 
 # Groupe PARTAGÉ avec weekly.yml (même nom exact, voir ce fichier pour le
 # détail) : les deux committent data/football.db, sérialisés entre eux
@@ -39,6 +42,32 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python odds_snapshot.py --markets h2h --regions eu
+
+      # Gap trouvé en audit (2026-09-22) : weekly.yml alerte déjà par issue GitHub
+      # quand un run ne produit rien (audit du 21/09), mais odds_snapshot.yml n'avait
+      # jamais reçu la même protection. Différence volontaire avec weekly.yml :
+      # celui-ci alerte sur "rien committé" (weekly, un run par semaine, ça DOIT
+      # presque toujours avancer). Ici "rien committé" est le cas NORMAL la plupart
+      # des runs (2/jour, souvent rien de neuf publié entre deux captures) —
+      # alerter dessus crierait au loup en permanence. Le vrai signal de panne
+      # silencieuse ici est l'ÉCHEC de la capture elle-même (clé invalide, quota
+      # épuisé — déjà des sys.exit() explicites dans odds_snapshot.py, mais qui ne
+      # remontaient jusqu'ici que dans les logs Actions, jamais signalés
+      # activement). `if: failure()` : ne se déclenche que si l'étape précédente a
+      # échoué, sans changer l'échec du job lui-même (toujours rouge).
+      - name: Alerter si la capture a échoué (clé invalide, quota épuisé, autre erreur API)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="odds-snapshot : échec de capture"
+          BODY="Run $(date -u +%Y-%m-%dT%H:%M:%SZ) — python odds_snapshot.py a échoué (clé ODDS_API_KEY invalide/absente, quota mensuel épuisé, ou autre erreur API — voir le message explicite dans les logs). Logs : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
 
       - name: Committer si de nouvelles lignes sont apparues dans book_odds
         env:

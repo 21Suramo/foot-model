@@ -10,6 +10,13 @@ on:
 
 permissions:
   contents: write
+  # issues: write requis par l'étape "Alerter si aucun commit..." ci-dessous
+  # (gh issue create/comment) — trouvé absent en auditant odds_snapshot.yml
+  # (2026-09-22) : déclarer `permissions:` du tout restreint tout scope non
+  # listé à `none`, donc cette alerte échouait en 403 sans jamais avoir été
+  # testée en conditions réelles (pas encore déclenchée depuis son ajout du
+  # 2026-09-21).
+  issues: write
 
 # Groupe PARTAGÉ avec odds-snapshot.yml (même nom exact) : les deux workflows
 # committent data/football.db, GitHub Actions sérialise donc leurs runs entre
