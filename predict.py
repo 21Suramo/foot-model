@@ -702,14 +702,28 @@ def line_shopping_summary(conn, league, home, away):
         return {}
 
 
-def ml_compare_prediction(conn, league, home, away, target_date):
+def ml_compare_prediction(conn, league, home, away, target_date, ml_cache=None):
     """Roadmap B1-B4 — probas 1N2 du GBM (ml_model.py/train.py), pour
     COMPARAISON UNIQUEMENT avec la prédiction M3.5 de production : n'alimente
     jamais final/best_odds/bets, le staking Kelly reste 1N2 M3.5 tant que ce
     chantier n'a pas la même profondeur de validation (cf. CLAUDE.md, section
     override du 2026-09-22). Coûteux (ré-entraîne le GBM sur la ligue
-    concernée à chaque appel — pas de cache, cf. train.py) : appelé
-    seulement si --ml-compare est passé explicitement.
+    concernée) : appelé seulement si --ml-compare est passé explicitement.
+
+    `ml_cache` (dict, partagé entre les appels d'un même run `cmd_match`,
+    même principe que `fit_cache` pour M3.5) évite de ré-entraîner deux fois
+    la même chose sur un slate multi-matchs de la même ligue — mesuré en
+    conditions réelles le 2026-09-22 : 3 matchs E0 sur le même run coûtaient
+    24,9s (3× le GBM ré-entraîné sur les mêmes 3090 matchs) avant ce cache.
+    Deux clés distinctes : le GBM lui-même (`("gbm", league)` — indépendant de
+    target_date, cf. train.fit_production_model qui utilise tout l'historique
+    disponible) et le fit Dixon-Coles goals-only de stacking
+    (`("dc", league, ref_monday)` — dépend du lundi de référence, donc
+    partageable entre matchs de la même ligue au sein d'un même slate, mais
+    PAS avec `fit_cache` : c'est un fit différent, goals-only, pas le fit
+    xG-blended M3.5 déjà en cache ailleurs). `ml_cache=None` (défaut, hors
+    `cmd_match`) désactive simplement le cache — un seul appel n'en profite
+    de toute façon pas.
 
     Retourne None si data/ml_frozen.json n'existe pas encore (backtest_ml.py
     --tune jamais lancé) — jamais une prédiction inventée sans hyperparamètres
@@ -724,7 +738,11 @@ def ml_compare_prediction(conn, league, home, away, target_date):
                     backtest_ml.FROZEN_PATH)
         return None
 
-    gbm_model, feature_names, n_train_gbm = ml_train.fit_production_model(conn, leagues=[league])
+    cache = ml_cache if ml_cache is not None else {}
+    gbm_key = ("gbm", league)
+    if gbm_key not in cache:
+        cache[gbm_key] = ml_train.fit_production_model(conn, leagues=[league])
+    gbm_model, feature_names, n_train_gbm = cache[gbm_key]
 
     ref_monday = backtest.monday_of(target_date.isoformat())
     trackers = state_asof(conn, target_date.isoformat(), leagues=[league])
@@ -735,9 +753,12 @@ def ml_compare_prediction(conn, league, home, away, target_date):
     # GBM (backtest_ml.dc_stacking_map : Dixon-Coles goals-only, ξ figé M3) —
     # pas le fit M3.5 (xG-blended) déjà utilisé pour la prédiction de
     # production, une variante différente qui biaiserait la feature.
-    xi = backtest_ml._dc_xi()
-    rows = [r for r in backtest.load_league(conn, league) if r["date"] < ref_monday.isoformat()]
-    dc_fit = model.fit(rows, xi=xi, ref_date=ref_monday)
+    dc_key = ("dc", league, ref_monday)
+    if dc_key not in cache:
+        xi = backtest_ml._dc_xi()
+        rows = [r for r in backtest.load_league(conn, league) if r["date"] < ref_monday.isoformat()]
+        cache[dc_key] = model.fit(rows, xi=xi, ref_date=ref_monday)
+    dc_fit = cache[dc_key]
     dc_h, dc_d, dc_a = dc_fit.probs_1x2(home, away)
     feats["dc_prob_h"], feats["dc_prob_d"], feats["dc_prob_a"] = dc_h, dc_d, dc_a
 
@@ -748,7 +769,8 @@ def ml_compare_prediction(conn, league, home, away, target_date):
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
                   odds_specs, odds_age_days, blend, fit_cache,
                   no_odds_reason=None, lineup_adjustment=None,
-                  devig=DEVIG_METHOD, ml_compare=False, auto_odds_meta=None):
+                  devig=DEVIG_METHOD, ml_compare=False, auto_odds_meta=None,
+                  ml_cache=None):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -792,7 +814,8 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
     derived = derived_markets_probs(grid, grid_ext)
 
     ls_summary = line_shopping_summary(conn, league, home, away)
-    ml_pred = ml_compare_prediction(conn, league, home, away, target_date) if ml_compare else None
+    ml_pred = (ml_compare_prediction(conn, league, home, away, target_date, ml_cache)
+              if ml_compare else None)
 
     market = best_odds = None
     m_weight = 0.0
@@ -2178,10 +2201,11 @@ def cmd_match(args, conn):
     # Deux passes : le plafond d'exposition porte sur la SOMME des mises du run,
     # il ne peut donc pas se décider pendant qu'on imprime match par match.
     fit_cache = {}
+    ml_cache = {}
     results = [predict_match(conn, cfg, league, home, away, target_date,
                              args.odds if len(fixtures) == 1 else [], odds_age,
                              args.blend, fit_cache, no_odds_reason, lineup_adjustment,
-                             args.devig, args.ml_compare, auto_odds_meta)
+                             args.devig, args.ml_compare, auto_odds_meta, ml_cache)
                for league, home, away in fixtures]
     # Le run courant réécrit ses propres entrées non réglées : elles ne comptent
     # pas comme exposition « déjà engagée » (sinon un ré-run se plafonnerait seul).

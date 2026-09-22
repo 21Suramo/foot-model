@@ -1233,15 +1233,29 @@ python -m unittest discover -s tests # tests unitaires
   (section affichée + `meta.line_shopping`) — ne remplace jamais `--odds`
   ni le staking Kelly ; {} si `book_odds` n'a rien capturé pour l'affiche.
 - `predict.py` — `--ml-compare` (roadmap B1-B4) : ré-entraîne le GBM sur la
-  ligue du match (via `train.fit_production_model`, coûteux — quelques
-  secondes à dizaines de secondes, jamais par défaut) et affiche ses
-  probas 1N2 à côté de M3.5, journalisé dans `meta.ml_prediction` —
-  informationnel seulement, `final`/`bets`/le staking Kelly restent
+  ligue du match (via `train.fit_production_model`, coûteux — mesuré en
+  conditions réelles le 2026-09-22 : ~7-9s par ligue, jamais par défaut) et
+  affiche ses probas 1N2 à côté de M3.5, journalisé dans `meta.ml_prediction`
+  — informationnel seulement, `final`/`bets`/le staking Kelly restent
   intégralement M3.5. La feature `dc_prob_*` utilisée par le GBM à
   l'inférence reproduit exactement la recette de `backtest_ml.py` (fit
   Dixon-Coles goals-only séparé, pas le fit M3.5 xG-blended déjà utilisé
   pour la prédiction de production) pour éviter tout décalage
   entraînement/inférence sur cette feature.
+  **`ml_cache` (2026-09-22) : le GBM et ce fit goals-only sont partagés entre
+  les matchs d'un même slate `--fixture` sur la même ligue**, même principe
+  que `fit_cache` pour M3.5 (mais un dict séparé — fits différents, pas
+  interchangeables). Corrige un vrai gap mesuré : sans cache, un slate de
+  3 matchs E0 avec `--ml-compare` coûtait 24,9s (le GBM et le fit goals-only
+  ré-entraînés 3 fois sur les mêmes 3090 matchs) au lieu de 9,7s — le GBM lui
+  seul est indépendant de `target_date` (`fit_production_model` s'entraîne
+  sur tout l'historique disponible, cf. train.py), donc partageable pour
+  toute la durée d'un run `cmd_match`, quelle que soit la date de chaque
+  affiche du slate ; le fit goals-only, lui, dépend du lundi de référence
+  (garde anti-fuite), mis en cache par `(league, ref_monday)` — la même clé
+  que `fit_cache`, mais dans un dict distinct puisque c'est un fit différent
+  (goals-only, pas xG-blended). `ml_cache=None` (défaut hors `cmd_match`)
+  désactive simplement le partage — sans effet sur un appel isolé.
 - `db.py` — migration `_migrate()` (roadmap B1-B4/A3, 2026-09-22) : ajoute
   par `ALTER TABLE` les colonnes `shots_h/a`, `sot_h/a`, `corners_h/a`,
   `fouls_h/a`, `yellow_h/a`, `red_h/a` à `matches` sur une base existante

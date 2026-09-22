@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -1377,6 +1378,82 @@ class TestAutoOddsCli(unittest.TestCase):
         for e in entries:
             self.assertFalse(e["meta"]["auto_odds"]["used"])
         conn.close()
+
+
+class TestMlCompareCache(unittest.TestCase):
+    """Mesuré en conditions réelles le 2026-09-22 : sans cache, --ml-compare
+    ré-entraînait le GBM et refittait le Dixon-Coles goals-only de stacking
+    À CHAQUE MATCH, même sur la même ligue au sein du même slate (3 matchs E0
+    -> 24,9s au lieu de ~9s). ml_cache doit ramener ça à un seul entraînement
+    par ligue et par lundi de référence, partagé entre predict_match()."""
+
+    def setUp(self):
+        import backtest_ml
+        from tests.test_backtest_ml import _seed_matches
+        self.conn = db.connect(":memory:")
+        _seed_matches(self.conn)
+        self._orig_frozen_path = backtest_ml.FROZEN_PATH
+        self._tmp = tempfile.TemporaryDirectory()
+        backtest_ml.FROZEN_PATH = Path(self._tmp.name) / "ml_frozen.json"
+        backtest_ml.FROZEN_PATH.write_text(json.dumps({
+            "num_leaves": 3, "learning_rate": 0.1, "num_rounds": 5,
+            "leagues": ["E0"], "validation_seasons": ["2021"], "brier_validation": 0.6,
+        }))
+        last_date = self.conn.execute("SELECT MAX(date) d FROM matches").fetchone()["d"]
+        self.target_date = datetime.date.fromisoformat(last_date) + datetime.timedelta(days=30)
+
+    def tearDown(self):
+        import backtest_ml
+        backtest_ml.FROZEN_PATH = self._orig_frozen_path
+        self._tmp.cleanup()
+        self.conn.close()
+
+    def test_shared_cache_trains_gbm_only_once_across_matches(self):
+        # model.fit est aussi appelé EN INTERNE par fit_production_model (le
+        # walk-forward qui construit la table de stacking) : compter ses
+        # appels mélangerait ce bruit avec le dc_fit explicite de
+        # ml_compare_prediction. On isole donc uniquement fit_production_model
+        # ici (rien d'autre ne l'appelle sur ce chemin), et le cache lui-même
+        # (identité d'objet) pour le dc_fit ci-dessous.
+        import train as ml_train
+        ml_cache = {}
+        with mock.patch.object(ml_train, "fit_production_model",
+                               wraps=ml_train.fit_production_model) as spy_gbm:
+            predict.ml_compare_prediction(self.conn, "E0", "A", "B", self.target_date, ml_cache)
+            predict.ml_compare_prediction(self.conn, "E0", "C", "D", self.target_date, ml_cache)
+        self.assertEqual(spy_gbm.call_count, 1)
+
+    def test_no_cache_trains_gbm_every_call(self):
+        import train as ml_train
+        with mock.patch.object(ml_train, "fit_production_model",
+                               wraps=ml_train.fit_production_model) as spy_gbm:
+            predict.ml_compare_prediction(self.conn, "E0", "A", "B", self.target_date)
+            predict.ml_compare_prediction(self.conn, "E0", "C", "D", self.target_date)
+        self.assertEqual(spy_gbm.call_count, 2)
+
+    def test_shared_cache_reuses_the_same_dc_fit_object_across_matches(self):
+        ml_cache = {}
+        predict.ml_compare_prediction(self.conn, "E0", "A", "B", self.target_date, ml_cache)
+        dc_keys = [k for k in ml_cache if k[0] == "dc"]
+        self.assertEqual(len(dc_keys), 1)
+        dc_fit_first = ml_cache[dc_keys[0]]
+
+        predict.ml_compare_prediction(self.conn, "E0", "C", "D", self.target_date, ml_cache)
+        dc_keys_after = [k for k in ml_cache if k[0] == "dc"]
+        self.assertEqual(dc_keys_after, dc_keys)  # même clé, pas une deuxième entrée
+        self.assertIs(ml_cache[dc_keys_after[0]], dc_fit_first)  # même objet, jamais refit
+
+    def test_no_cache_creates_a_fresh_dc_fit_each_call(self):
+        # Sans ml_cache partagé, chaque appel construit son propre dict local
+        # (cache=cache if cache is not None else {}) : rien à réutiliser, par
+        # construction — sert de garde-fou si ce comportement par défaut change.
+        result = predict.ml_compare_prediction(self.conn, "E0", "A", "B", self.target_date)
+        self.assertIsNotNone(result)
+
+    def test_cached_and_uncached_predictions_agree(self):
+        uncached = predict.ml_compare_prediction(self.conn, "E0", "A", "B", self.target_date)
+        cached = predict.ml_compare_prediction(self.conn, "E0", "A", "B", self.target_date, {})
+        self.assertEqual(uncached["probs"], cached["probs"])
 
 
 if __name__ == "__main__":
