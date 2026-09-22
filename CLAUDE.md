@@ -527,12 +527,47 @@ exactement ce que la discipline du projet interdit.
   **Cadence de capture automatisée depuis le 2026-09-13**
   (`.github/workflows/odds_snapshot.yml`, décision explicite Option A —
   détails dans la section « Cadence de capture des cotes » plus bas) : 2
-  captures/jour, ~180 crédits/mois. Ce qui reste PAS fait de la demande
-  originale d'A2 : l'entrée `--odds` de `predict.py match` reste manuelle
-  (la génération de prédiction ne lit toujours pas `book_odds` — seul
-  `sync-results` le fait, pour le CLV provisoire R1, cf. exception
-  ci-dessous). Ne pas présenter A2 comme terminé : la capture automatisée
-  existe, l'intégration de `book_odds` à la génération de prédiction non.
+  captures/jour, ~180 crédits/mois.
+
+  **`--auto-odds` (2026-09-22) : la génération de prédiction PEUT désormais
+  lire `book_odds` — mais reste opt-in, jamais le défaut.** `predict.py match
+  --auto-odds` cherche le dernier snapshot Pinnacle h2h de `book_odds` pour
+  l'affiche demandée (`auto_lookup_pinnacle_odds`) et l'utilise comme cote,
+  avec un âge calculé depuis son `fetched_at` (le pont marché/modèle
+  applique alors sa décroissance de poids habituelle — 19 jours d'âge
+  observés en test réel sur une cote capturée bien avant l'échéance
+  retombent déjà au plancher 28 %, comportement inchangé). Volontairement
+  **opt-in** (flag explicite) plutôt que le comportement par défaut quand
+  `--odds` est omis : silencieusement changer de source de cotes selon la
+  disponibilité de `book_odds` aurait rendu les entrées du journal
+  incohérentes entre elles sans que l'opérateur ne le décide. Incompatible
+  avec `--odds`/`--odds-date`/`--odds-age-days` (`sys.exit` explicite si
+  combinés — ambiguïté sur la source de vérité, jamais résolue en silence),
+  match unique seulement (comme `--odds`). Si `book_odds` n'a aucun snapshot
+  Pinnacle exploitable (3 issues) pour l'affiche : repli sur le comportement
+  modèle-seul existant, `no_odds_reason = book_odds_unavailable` (nouvelle
+  valeur dans `NO_ODDS_REASONS`, déduite jamais déclarable par l'opérateur —
+  même statut que `slate_odds_ignored`). Journalisé dans `meta.auto_odds`
+  (`used`, `book`, `fetched_at`, `age_days`).
+  **Garde anti-incohérence trouvée en testant en conditions réelles** (pas
+  en revue de code) : une affiche homonyme reprogrammée à une tout autre
+  date (ex. Arsenal-Leeds capturé le 2026-09-21 pour un coup d'envoi réel le
+  2026-10-10, testé avec `--date 2026-09-13` par erreur) passait le filtre
+  SQL `fetched_at <= commence_time` et produisait un ÂGE NÉGATIF
+  silencieusement ramené à 0 par `max(0, ...)` — une cote sans aucun
+  rapport avec le match demandé aurait été utilisée comme si elle était du
+  jour même. `auto_lookup_pinnacle_odds` compare maintenant
+  `book_odds.commence_time` à `target_date` (±1 jour de marge pour les
+  fuseaux horaires) et retombe sur `None` (avec un `log.warning` explicite)
+  au-delà — jamais un âge inventé. Ce que ça ne change PAS : l'entrée
+  `--odds` manuelle reste le chemin par défaut et recommandé pour la routine
+  hebdomadaire (compos/actus via le skill football-match-predictor, plus
+  riche qu'un simple snapshot Pinnacle) ; `--auto-odds` est un filet pour un
+  usage ponctuel ou un script, pas un remplacement. `sync-results` continue
+  de lire `book_odds` séparément pour le CLV provisoire R1 (fonction
+  distincte, `latest_pinnacle_snapshot` — cf. exception ci-dessous) ; ne pas
+  fusionner les deux, elles répondent à des besoins différents (a posteriori
+  pour l'une, a priori pour l'autre) et évolueront sans doute indépendamment.
   Le workflow nécessite en outre que l'utilisateur ait ajouté le secret
   `ODDS_API_KEY` sur GitHub et que ce fichier soit mergé sur la branche par
   défaut (les crons GitHub Actions ne lisent que la copie du workflow sur

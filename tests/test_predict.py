@@ -1268,6 +1268,117 @@ class TestNoOddsReasonCli(unittest.TestCase):
                  "--no-odds-reason", "not_provided"])
 
 
+class TestAutoOddsCli(unittest.TestCase):
+    """Roadmap A2 (suite, 2026-09-22) : --auto-odds lit book_odds au lieu d'une
+    saisie --odds manuelle, bout en bout jusqu'au journal."""
+
+    def _mini_db(self):
+        conn = db.connect(":memory:")
+        base = datetime.date(2025, 8, 1)
+        for wk in range(20):
+            day = (base + datetime.timedelta(days=wk * 7)).isoformat()
+            hg, ag = (3, 0) if wk % 2 == 0 else (2, 1)
+            db.upsert_match(conn, {"date": day, "league": "E0", "season": "2526",
+                                   "home": "Alpha", "away": "Beta", "fthg": hg, "ftag": ag})
+            day2 = (base + datetime.timedelta(days=wk * 7 + 1)).isoformat()
+            db.upsert_match(conn, {"date": day2, "league": "E0", "season": "2526",
+                                   "home": "Beta", "away": "Alpha", "fthg": 0, "ftag": 2})
+        conn.commit()
+        return conn
+
+    def _snapshot_row(self, **overrides):
+        row = {"fetched_at": "2026-08-14T09:00:00+00:00", "league": "E0",
+              "commence_time": "2026-08-15T14:00:00Z", "home": "Alpha",
+              "away": "Beta", "book": "pinnacle", "market": "h2h",
+              "outcome": "home", "point": None, "price": 1.85}
+        row.update(overrides)
+        return row
+
+    def _run(self, argv, conn):
+        args = predict.build_parser().parse_args(argv)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            args.func(args, conn)
+        return buf.getvalue()
+
+    def test_auto_odds_uses_book_odds_snapshot(self):
+        conn = self._mini_db()
+        for outcome, price in [("home", 1.85), ("draw", 3.6), ("away", 4.4)]:
+            db.insert_book_odds(conn, self._snapshot_row(outcome=outcome, price=price))
+        conn.commit()
+        frozen = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        orig = backtest35.frozen
+        backtest35.frozen = lambda: frozen
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                log = str(Path(d) / "j.json")
+                out = self._run(["match", "--league", "E0", "--home", "Alpha", "--away", "Beta",
+                                 "--date", "2026-08-15", "--auto-odds", "--log", log], conn)
+                entry = json.loads(Path(log).read_text())[0]
+        finally:
+            backtest35.frozen = orig
+        self.assertTrue(entry["meta"]["auto_odds"]["used"])
+        self.assertEqual(entry["meta"]["auto_odds"]["book"], "pinnacle")
+        self.assertEqual(entry["meta"]["auto_odds"]["age_days"], 1)
+        self.assertGreater(entry["meta"]["market_weight"], 0.0)
+        self.assertIn("cote auto-lookup", out)
+        conn.close()
+
+    def test_auto_odds_falls_back_when_no_snapshot(self):
+        conn = self._mini_db()
+        frozen = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        orig = backtest35.frozen
+        backtest35.frozen = lambda: frozen
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                log = str(Path(d) / "j.json")
+                out = self._run(["match", "--league", "E0", "--home", "Alpha", "--away", "Beta",
+                                 "--date", "2026-08-15", "--auto-odds", "--log", log], conn)
+                entry = json.loads(Path(log).read_text())[0]
+        finally:
+            backtest35.frozen = orig
+        self.assertFalse(entry["meta"]["auto_odds"]["used"])
+        self.assertEqual(entry["meta"]["no_odds_reason"], "book_odds_unavailable")
+        self.assertIn("[book_odds_unavailable]", out)
+        conn.close()
+
+    def test_auto_odds_conflicts_with_manual_odds(self):
+        conn = self._mini_db()
+        args = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "Alpha", "--away", "Beta",
+             "--odds", "1.85,3.6,4.4", "--auto-odds", "--no-log"])
+        with self.assertRaises(SystemExit):
+            args.func(args, conn)
+        conn.close()
+
+    def test_auto_odds_conflicts_with_odds_date(self):
+        conn = self._mini_db()
+        args = predict.build_parser().parse_args(
+            ["match", "--league", "E0", "--home", "Alpha", "--away", "Beta",
+             "--odds-date", "2026-08-14", "--auto-odds", "--no-log"])
+        with self.assertRaises(SystemExit):
+            args.func(args, conn)
+        conn.close()
+
+    def test_auto_odds_ignored_on_slate(self):
+        conn = self._mini_db()
+        frozen = {"w": 0.0, "xi": 0.0, "kappa": 2.0, "temperature": 1.0}
+        orig = backtest35.frozen
+        backtest35.frozen = lambda: frozen
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                log = str(Path(d) / "j.json")
+                self._run(["match", "--fixture", "E0,Alpha,Beta", "--fixture", "E0,Beta,Alpha",
+                          "--date", "2026-08-15", "--auto-odds", "--log", log], conn)
+                entries = json.loads(Path(log).read_text())
+        finally:
+            backtest35.frozen = orig
+        self.assertEqual(len(entries), 2)
+        for e in entries:
+            self.assertFalse(e["meta"]["auto_odds"]["used"])
+        conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -1406,6 +1517,75 @@ class TestClvProvisional(unittest.TestCase):
     def test_latest_pinnacle_snapshot_returns_none_without_data(self):
         conn = db.connect(":memory:")
         self.assertIsNone(predict.latest_pinnacle_snapshot(conn, "E0", "Leeds", "Newcastle"))
+        conn.close()
+
+    def test_auto_lookup_pinnacle_odds_builds_spec_and_age(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-12T09:00:00+00:00", outcome=outcome, price=price))
+        conn.commit()
+        lookup = predict.auto_lookup_pinnacle_odds(conn, "E0", "Leeds", "Newcastle",
+                                                    datetime.date(2026, 9, 14))
+        self.assertEqual(lookup["spec"], "4.5,3.5,1.9")
+        self.assertEqual(lookup["age_days"], 2)  # 2026-09-14 - 2026-09-12
+        self.assertEqual(lookup["fetched_at"], "2026-09-12T09:00:00+00:00")
+        conn.close()
+
+    def test_auto_lookup_pinnacle_odds_picks_most_recent_before_kickoff(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.8), ("draw", 3.6), ("away", 1.85)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-12T09:00:00+00:00", outcome=outcome, price=price))
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-13T18:00:00+00:00", outcome=outcome, price=price))
+        conn.commit()
+        lookup = predict.auto_lookup_pinnacle_odds(conn, "E0", "Leeds", "Newcastle",
+                                                    datetime.date(2026, 9, 14))
+        self.assertEqual(lookup["spec"], "4.5,3.5,1.9")
+        self.assertEqual(lookup["age_days"], 1)
+        conn.close()
+
+    def test_auto_lookup_pinnacle_odds_returns_none_without_data(self):
+        conn = db.connect(":memory:")
+        self.assertIsNone(predict.auto_lookup_pinnacle_odds(conn, "E0", "Leeds", "Newcastle",
+                                                             datetime.date(2026, 9, 14)))
+        conn.close()
+
+    def test_auto_lookup_pinnacle_odds_none_on_incomplete_outcomes(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.5), ("draw", 3.5)]:  # away manquant
+            db.insert_book_odds(conn, self._snapshot_row(outcome=outcome, price=price))
+        conn.commit()
+        self.assertIsNone(predict.auto_lookup_pinnacle_odds(conn, "E0", "Leeds", "Newcastle",
+                                                             datetime.date(2026, 9, 14)))
+        conn.close()
+
+    def test_auto_lookup_pinnacle_odds_rejects_mismatched_fixture_date(self):
+        """Affiche homonyme reprogrammée : commence_time très loin de target_date
+        (ex. match Leeds-Newcastle rejoué en octobre) — snapshot ignoré, jamais
+        un âge négatif silencieusement ramené à 0."""
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-21T22:00:00+00:00",
+                commence_time="2026-10-10T11:30:00Z", outcome=outcome, price=price))
+        conn.commit()
+        self.assertIsNone(predict.auto_lookup_pinnacle_odds(conn, "E0", "Leeds", "Newcastle",
+                                                             datetime.date(2026, 9, 14)))
+        conn.close()
+
+    def test_auto_lookup_pinnacle_odds_tolerates_one_day_timezone_slack(self):
+        conn = db.connect(":memory:")
+        for outcome, price in [("home", 4.5), ("draw", 3.5), ("away", 1.9)]:
+            db.insert_book_odds(conn, self._snapshot_row(
+                fetched_at="2026-09-13T09:00:00+00:00",
+                commence_time="2026-09-15T00:30:00Z", outcome=outcome, price=price))
+        conn.commit()
+        lookup = predict.auto_lookup_pinnacle_odds(conn, "E0", "Leeds", "Newcastle",
+                                                    datetime.date(2026, 9, 14))
+        self.assertIsNotNone(lookup)
         conn.close()
 
     def test_sync_results_fills_provisional_clv_from_book_odds(self):

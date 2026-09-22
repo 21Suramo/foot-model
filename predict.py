@@ -36,6 +36,8 @@ Usage :
     python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
         [--date 2026-08-15] [--odds 1.85,3.6,4.4 --odds 1.88,3.55,4.3] \
         [--odds-date 2026-08-14] [--contest-points 13,50,68]
+    python predict.py match --league E0 --home "Arsenal" --away "Chelsea" \
+        --date 2026-10-10 --auto-odds   # roadmap A2 : cote auto depuis book_odds
     python predict.py result --match "Arsenal-Chelsea" --actual 2-1 [--ht 1-0]
     python pipeline.py --update && python predict.py sync-results
     python predict.py report [--month 2026-08]
@@ -129,6 +131,8 @@ NO_ODDS_REASONS = {
     "margin_rejected": "cotes trouvées mais écartées en amont (marge implicite hors bornes)",
     "not_provided": "aucune cote passée à l'appel, raison non précisée",
     "slate_odds_ignored": "--odds ne s'applique qu'à un match unique : ignoré sur un slate",
+    "book_odds_unavailable": "--auto-odds demandé mais book_odds n'a aucun snapshot Pinnacle "
+                              "exploitable (3 issues) pour cette affiche",
 }
 # Ce que l'appelant a le droit de déclarer ; le reste est déduit du code.
 DECLARABLE_NO_ODDS_REASONS = ("not_yet_published", "lookup_failed", "margin_rejected")
@@ -744,7 +748,7 @@ def ml_compare_prediction(conn, league, home, away, target_date):
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
                   odds_specs, odds_age_days, blend, fit_cache,
                   no_odds_reason=None, lineup_adjustment=None,
-                  devig=DEVIG_METHOD, ml_compare=False):
+                  devig=DEVIG_METHOD, ml_compare=False, auto_odds_meta=None):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -827,6 +831,7 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "derived_markets": derived,
         "line_shopping": ls_summary,
         "ml_prediction": ml_pred,
+        "auto_odds": auto_odds_meta or {"used": False},
     }
 
 
@@ -872,6 +877,10 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
           (f" → poids marché {res['market_weight']:.0%} "
            f"(démargeage {res.get('devig') or DEVIG_METHOD})." if res["market"]
            else f" [{res.get('no_odds_reason') or DEFAULT_NO_ODDS_REASON}]."))
+    ao = res.get("auto_odds") or {}
+    if ao.get("used"):
+        print(f"  (cote auto-lookup --auto-odds : snapshot Pinnacle {ao['fetched_at']}, "
+              f"{ao['age_days']}j avant le match)")
     print()
 
     market, model_probs, final = res["market"], res["model"], res["final"]
@@ -1138,7 +1147,12 @@ def log_prediction(path, res, no_stake=False):
                  # Roadmap A2 (informationnel, book_odds) et B1-B4 (informationnel,
                  # --ml-compare) : ni l'un ni l'autre n'alimente bets/stakes.
                  "line_shopping": res.get("line_shopping") or {},
-                 "ml_prediction": res.get("ml_prediction")},
+                 "ml_prediction": res.get("ml_prediction"),
+                 # Roadmap A2 (suite, 2026-09-22) : la cote de CE run vient-elle d'un
+                 # snapshot book_odds (--auto-odds) plutôt que d'une saisie manuelle ?
+                 # Purement traçable, n'affecte pas bets/stakes (déjà calculés sur
+                 # market/final au moment de l'appel, --auto-odds ou pas).
+                 "auto_odds": res.get("auto_odds") or {"used": False}},
     }
     for i, e in enumerate(entries):
         if (e["match"] == match and e["competition"] == res["league"]
@@ -1243,6 +1257,60 @@ def latest_pinnacle_snapshot(conn, league, home, away):
     latest_fetch = rows[0]["fetched_at"]
     prices = {r["outcome"]: r["price"] for r in rows if r["fetched_at"] == latest_fetch}
     return prices if all(k in prices for k in ISSUES) else None
+
+
+# --- Auto-odds (roadmap A2, suite — 2026-09-22) ------------------------------
+#
+# `latest_pinnacle_snapshot` ci-dessus sert le CLV provisoire (a posteriori,
+# match déjà joué). `auto_lookup_pinnacle_odds` répond à un besoin différent :
+# fournir une cote à `predict_match` AVANT le coup d'envoi quand l'opérateur
+# n'en a pas passé une à la main (--auto-odds). Même requête (book='pinnacle',
+# fetched_at <= commence_time, le plus récent des 3 issues), gardée séparée
+# plutôt que fusionnée : les deux fonctions ont des appelants et des besoins de
+# schéma de retour différents (CLV veut juste les prix, --auto-odds a aussi
+# besoin de fetched_at pour calculer l'âge de la cote) et évolueront sans doute
+# indépendamment.
+
+def auto_lookup_pinnacle_odds(conn, league, home, away, target_date):
+    """Dernier snapshot Pinnacle h2h de `book_odds` pour cette affiche, converti
+    en spec exploitable par --odds ('home,nul,away') + âge en jours vs
+    `target_date`. None si book_odds n'a aucun snapshot Pinnacle exploitable
+    (3 issues) pour ce match — jamais une cote partielle ou devinée : dans ce
+    cas l'appelant retombe sur le comportement modèle-seul existant.
+
+    Garde anti-incohérence : `commence_time` (posé par odds_snapshot.py depuis
+    l'API, indépendant de `target_date` que l'opérateur passe à --date) doit
+    tomber le même jour que `target_date` à ±1 jour près (fuseaux horaires).
+    Sans cette garde, une affiche homonyme reprogrammée à une tout autre date
+    (ex. Arsenal-Leeds rejoué en octobre après un report) passerait le filtre
+    `fetched_at <= commence_time` et produirait un âge négatif — silencieusement
+    ramené à 0 par un simple max(0, ...), masquant une cote qui n'a RIEN à voir
+    avec le match demandé plutôt que de le signaler."""
+    rows = conn.execute(
+        "SELECT outcome, price, fetched_at, commence_time FROM book_odds "
+        "WHERE league = ? AND home = ? AND away = ? AND book = 'pinnacle' "
+        "AND market = 'h2h' AND fetched_at <= commence_time "
+        "ORDER BY fetched_at DESC",
+        (league, home, away)).fetchall()
+    if not rows:
+        return None
+    commence_date = datetime.datetime.fromisoformat(
+        rows[0]["commence_time"].replace("Z", "+00:00")).date()
+    if abs((target_date - commence_date).days) > 1:
+        log.warning("auto-odds : book_odds a un snapshot Pinnacle pour %s-%s (%s) mais son "
+                    "commence_time (%s) ne correspond pas à la date demandée (%s) — probable "
+                    "affiche homonyme reprogrammée. Cote ignorée plutôt qu'un âge négatif "
+                    "silencieusement ramené à 0.",
+                    home, away, league, commence_date, target_date)
+        return None
+    latest_fetch = rows[0]["fetched_at"]
+    prices = {r["outcome"]: r["price"] for r in rows if r["fetched_at"] == latest_fetch}
+    if not all(k in prices for k in ISSUES):
+        return None
+    fetched_date = datetime.datetime.fromisoformat(latest_fetch).date()
+    age_days = max(0, (target_date - fetched_date).days)
+    spec = f"{prices['home']},{prices['draw']},{prices['away']}"
+    return {"spec": spec, "age_days": age_days, "fetched_at": latest_fetch}
 
 
 def settle_entry(entry, actual, actual_ht=None, closing_odds=None, provisional_odds=None):
@@ -2070,6 +2138,30 @@ def cmd_match(args, conn):
         # qu'un market_weight nul. On la nomme dans chaque entrée.
         no_odds_reason = "slate_odds_ignored"
 
+    auto_odds_meta = None
+    if args.auto_odds:
+        if args.odds:
+            sys.exit("--auto-odds et --odds sont incompatibles : passe une cote manuelle "
+                     "OU --auto-odds, jamais les deux dans le même appel.")
+        if args.odds_date or args.odds_age_days is not None:
+            sys.exit("--auto-odds calcule lui-même l'âge de la cote depuis le snapshot "
+                     "book_odds retenu — --odds-date/--odds-age-days n'ont pas de sens avec lui.")
+        if len(fixtures) > 1:
+            log.warning("--auto-odds ne s'applique qu'à un match unique — ignoré pour un "
+                        "slate (%d affiches). Passe chaque match séparément.", len(fixtures))
+        else:
+            ao_league, ao_home, ao_away = fixtures[0]
+            lookup = auto_lookup_pinnacle_odds(conn, ao_league, ao_home, ao_away, target_date)
+            if lookup:
+                args.odds = [lookup["spec"]]
+                odds_age = lookup["age_days"]
+                auto_odds_meta = {"used": True, "book": "pinnacle",
+                                  "fetched_at": lookup["fetched_at"],
+                                  "age_days": lookup["age_days"]}
+            else:
+                no_odds_reason = "book_odds_unavailable"
+                auto_odds_meta = {"used": False, "book": "pinnacle"}
+
     lineup_adjustment = None
     if args.lineup_adjustment:
         if len(fixtures) > 1:
@@ -2089,7 +2181,7 @@ def cmd_match(args, conn):
     results = [predict_match(conn, cfg, league, home, away, target_date,
                              args.odds if len(fixtures) == 1 else [], odds_age,
                              args.blend, fit_cache, no_odds_reason, lineup_adjustment,
-                             args.devig, args.ml_compare)
+                             args.devig, args.ml_compare, auto_odds_meta)
                for league, home, away in fixtures]
     # Le run courant réécrit ses propres entrées non réglées : elles ne comptent
     # pas comme exposition « déjà engagée » (sinon un ré-run se plafonnerait seul).
@@ -2191,6 +2283,13 @@ def build_parser():
                    help="Date de publication des cotes (fixe la fraîcheur du pont marché)")
     p.add_argument("--odds-age-days", type=int, default=None,
                    help="Âge des cotes en jours (alternative à --odds-date)")
+    p.add_argument("--auto-odds", action="store_true",
+                   help="Roadmap A2 (suite) : au lieu de --odds, cherche le dernier snapshot "
+                        "Pinnacle de book_odds (odds_snapshot.py) pour cette affiche et l'utilise "
+                        "comme cote (âge calculé depuis fetched_at). Match unique seulement, "
+                        "incompatible avec --odds/--odds-date/--odds-age-days. Si book_odds n'a "
+                        "rien pour ce match, retombe sur le comportement modèle-seul "
+                        "(no_odds_reason='book_odds_unavailable'). Journalisé dans meta.auto_odds.")
     p.add_argument("--blend", type=float, default=DEFAULT_BLEND,
                    help=f"Poids marché de base sur cotes fraîches (défaut {DEFAULT_BLEND:g} ; "
                         f"décroît vers un plancher de {STALE_FLOOR:.0%} si périmées)")
