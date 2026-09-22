@@ -56,6 +56,7 @@ import bootstrap
 import db
 import derived_markets
 import footballdata
+import line_shopping
 import model
 
 log = logging.getLogger("predict")
@@ -683,10 +684,67 @@ def derived_markets_probs(grid, grid_ext):
     return {m: calibrated_derived_prob(m, p) for m, p in raw.items()}
 
 
+def line_shopping_summary(conn, league, home, away):
+    """Roadmap A2 — meilleure cote tous books confondus (book_odds, capturée
+    par odds_snapshot.py), PUREMENT INFORMATIONNEL : ne modifie jamais
+    market/best_odds/final ni le staking Kelly (qui reste sur la cote
+    manuelle --odds). {} si book_odds n'a rien capturé pour cette affiche —
+    pas une erreur, juste rien à afficher."""
+    try:
+        return line_shopping.summarize(conn, league, home, away)
+    except Exception:
+        # Lecture informationnelle seule : une base book_odds absente/vide
+        # ou une erreur de lecture ne doit jamais faire échouer une prédiction.
+        return {}
+
+
+def ml_compare_prediction(conn, league, home, away, target_date):
+    """Roadmap B1-B4 — probas 1N2 du GBM (ml_model.py/train.py), pour
+    COMPARAISON UNIQUEMENT avec la prédiction M3.5 de production : n'alimente
+    jamais final/best_odds/bets, le staking Kelly reste 1N2 M3.5 tant que ce
+    chantier n'a pas la même profondeur de validation (cf. CLAUDE.md, section
+    override du 2026-09-22). Coûteux (ré-entraîne le GBM sur la ligue
+    concernée à chaque appel — pas de cache, cf. train.py) : appelé
+    seulement si --ml-compare est passé explicitement.
+
+    Retourne None si data/ml_frozen.json n'existe pas encore (backtest_ml.py
+    --tune jamais lancé) — jamais une prédiction inventée sans hyperparamètres
+    figés."""
+    import backtest_ml
+    import train as ml_train
+    from features.build import features_for_fixture, state_asof
+
+    if not backtest_ml.FROZEN_PATH.exists():
+        log.warning("--ml-compare demandé mais %s absent — lancer d'abord "
+                    "`python backtest_ml.py --tune` puis `--run`. Comparaison sautée.",
+                    backtest_ml.FROZEN_PATH)
+        return None
+
+    gbm_model, feature_names, n_train_gbm = ml_train.fit_production_model(conn, leagues=[league])
+
+    ref_monday = backtest.monday_of(target_date.isoformat())
+    trackers = state_asof(conn, target_date.isoformat(), leagues=[league])
+    feats = features_for_fixture(trackers, home, away, target_date.isoformat())
+    feats["league"] = league
+
+    # dc_prob_* doit reproduire EXACTEMENT la recette vue à l'entraînement du
+    # GBM (backtest_ml.dc_stacking_map : Dixon-Coles goals-only, ξ figé M3) —
+    # pas le fit M3.5 (xG-blended) déjà utilisé pour la prédiction de
+    # production, une variante différente qui biaiserait la feature.
+    xi = backtest_ml._dc_xi()
+    rows = [r for r in backtest.load_league(conn, league) if r["date"] < ref_monday.isoformat()]
+    dc_fit = model.fit(rows, xi=xi, ref_date=ref_monday)
+    dc_h, dc_d, dc_a = dc_fit.probs_1x2(home, away)
+    feats["dc_prob_h"], feats["dc_prob_d"], feats["dc_prob_a"] = dc_h, dc_d, dc_a
+
+    probs = gbm_model.probs_1x2(feats)
+    return {"probs": dict(zip(ISSUES, probs)), "n_train": n_train_gbm}
+
+
 def predict_match(conn, cfg, league, home_in, away_in, target_date,
                   odds_specs, odds_age_days, blend, fit_cache,
                   no_odds_reason=None, lineup_adjustment=None,
-                  devig=DEVIG_METHOD):
+                  devig=DEVIG_METHOD, ml_compare=False):
     """Calcule tout pour un match et renvoie un dict de résultats (sans imprimer)."""
     ref_monday = backtest.monday_of(target_date.isoformat())
     key = (league, ref_monday)
@@ -729,6 +787,9 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
     grid_ext = grid_to_dict(grid_ext_arr)
     derived = derived_markets_probs(grid, grid_ext)
 
+    ls_summary = line_shopping_summary(conn, league, home, away)
+    ml_pred = ml_compare_prediction(conn, league, home, away, target_date) if ml_compare else None
+
     market = best_odds = None
     m_weight = 0.0
     reason = None
@@ -764,6 +825,8 @@ def predict_match(conn, cfg, league, home_in, away_in, target_date,
         "devig": devig if market is not None else None,
         "lineup_adjustment": lineup_meta,
         "derived_markets": derived,
+        "line_shopping": ls_summary,
+        "ml_prediction": ml_pred,
     }
 
 
@@ -846,6 +909,23 @@ def print_prediction(res, cfg, contest=None, exact_bonus=0.0, no_stake=False):
               "pour figer/valider ce marché, cf. reports/derived_markets_backtest.md)")
     print(f"Double chance 1X : {fmt(final['home'] + final['draw'])}   |   "
           f"X2 : {fmt(final['away'] + final['draw'])}")
+
+    ls = res.get("line_shopping") or {}
+    if ls.get("h2h"):
+        print("\n--- Line shopping (roadmap A2, book_odds — informationnel, ne remplace pas "
+              "--odds/le staking Kelly) ---")
+        for key, label in (("home", f"Victoire {home}"), ("draw", "Nul"), ("away", f"Victoire {away}")):
+            o = ls["h2h"].get(key)
+            if o:
+                print(f"  Meilleure cote {label:<20}: {o['price']:.2f} ({o['book']})")
+
+    mlp = res.get("ml_prediction")
+    if mlp:
+        print("\n--- Comparaison GBM (roadmap B1-B4, --ml-compare — INFORMATIONNEL, pas encore "
+              "validé au niveau de M3.5, staking Kelly inchangé) ---")
+        for key, label in (("home", f"Victoire {home}"), ("draw", "Nul"), ("away", f"Victoire {away}")):
+            print(f"  {label:<20}: GBM {fmt(mlp['probs'][key])}   vs   M3.5 {fmt(model_probs[key])}")
+        print(f"  (GBM entraîné sur {mlp['n_train']} matchs {res['league']})")
 
     print("\nTop 7 des scores exacts (grille du modèle) :")
     for (h, a), p in sorted(grid.items(), key=lambda x: -x[1])[:7]:
@@ -1054,7 +1134,11 @@ def log_prediction(path, res, no_stake=False):
                  # (backtest_derived.py --tune), sinon brutes (calibrated=False).
                  # N'alimente PAS bets/stakes — le staking reste 1N2 uniquement.
                  "derived_markets": {m: {"p": round(p, 4), "calibrated": calibrated}
-                                     for m, (p, calibrated) in res.get("derived_markets", {}).items()}},
+                                     for m, (p, calibrated) in res.get("derived_markets", {}).items()},
+                 # Roadmap A2 (informationnel, book_odds) et B1-B4 (informationnel,
+                 # --ml-compare) : ni l'un ni l'autre n'alimente bets/stakes.
+                 "line_shopping": res.get("line_shopping") or {},
+                 "ml_prediction": res.get("ml_prediction")},
     }
     for i, e in enumerate(entries):
         if (e["match"] == match and e["competition"] == res["league"]
@@ -2005,7 +2089,7 @@ def cmd_match(args, conn):
     results = [predict_match(conn, cfg, league, home, away, target_date,
                              args.odds if len(fixtures) == 1 else [], odds_age,
                              args.blend, fit_cache, no_odds_reason, lineup_adjustment,
-                             args.devig)
+                             args.devig, args.ml_compare)
                for league, home, away in fixtures]
     # Le run courant réécrit ses propres entrées non réglées : elles ne comptent
     # pas comme exposition « déjà engagée » (sinon un ré-run se plafonnerait seul).
@@ -2141,6 +2225,12 @@ def build_parser():
                         f"{SLATE_EXPOSURE_CAP:.0%}).")
     p.add_argument("--no-stake", action="store_true", help="désactive la section mise suggérée")
     p.add_argument("--no-log", action="store_true", help="ne pas journaliser la prédiction")
+    p.add_argument("--ml-compare", action="store_true",
+                   help="roadmap B1-B4 : affiche en plus la comparaison GBM (ré-entraîné à "
+                        "chaque appel sur la ligue du match, cf. train.py — coûteux, quelques "
+                        "secondes). PUREMENT INFORMATIONNEL, journalisé dans meta.ml_prediction "
+                        "— ne change jamais final/bets/staking Kelly (M3.5 reste la production). "
+                        "Nécessite data/ml_frozen.json (backtest_ml.py --tune puis --run).")
     p.set_defaults(func=cmd_match)
 
     r = sub.add_parser("result", parents=[common], help="enregistrer le résultat réel d'une prédiction")

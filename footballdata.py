@@ -12,6 +12,19 @@ log = logging.getLogger("pipeline")
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 RAW_DIR = Path("data/raw/football-data")
 LEAGUES = ["E0", "SP1", "F1"]
+
+# Roadmap A3 — ligues secondaires à forte inefficience (Championship, Segunda
+# División, Serie B, Eredivisie), ajoutées le 2026-09-22 sur demande explicite
+# de l'utilisateur (cf. CLAUDE.md, section override). Séparées de LEAGUES et
+# jamais fusionnées dedans : Understat (understat.py, LEAGUE_MAP) ne couvre
+# QUE les 5 grands championnats et donc pas ces 4 ligues — aucune jointure xG
+# n'est possible ici (pipeline.py saute Understat pour SECONDARY_LEAGUES sans
+# tenter, pas un échec silencieux) ; check.py, backtest.py, backtest35.py
+# continuent d'itérer sur LEAGUES seul pour ne rien casser côté M3.5 déjà
+# figé. Les modules qui doivent couvrir les deux (features/, ml_model.py,
+# backtest_ml.py, A3) utilisent ALL_LEAGUES.
+SECONDARY_LEAGUES = ["E1", "SP2", "I2", "N1"]  # Championship, Segunda, Serie B, Eredivisie
+ALL_LEAGUES = LEAGUES + SECONDARY_LEAGUES
 SEASONS = ["1819", "1920", "2021", "2122", "2223", "2324", "2425", "2526", "2627"]
 CURRENT_SEASON = "2627"
 REQUEST_DELAY = 1.5  # secondes entre deux téléchargements
@@ -139,6 +152,19 @@ def _pick_line(row, cols):
     return None
 
 
+# Stats avancées (roadmap B1-B4/features, 2026-09-22) : présentes dans les CSV
+# football-data.co.uk pour les ligues du projet (vérifié par appel réel, top
+# ET secondaires) mais PAS la possession — football-data.co.uk n'a jamais
+# publié de colonne de possession, ce n'est pas un oubli de parsing. Les
+# indicateurs de forme (features/form.py) se limitent donc à tirs/tirs
+# cadrés/corners/fautes/cartons, jamais la possession.
+STAT_COLS = {
+    "shots_h": "HS", "shots_a": "AS", "sot_h": "HST", "sot_a": "AST",
+    "corners_h": "HC", "corners_a": "AC", "fouls_h": "HF", "fouls_a": "AF",
+    "yellow_h": "HY", "yellow_a": "AY", "red_h": "HR", "red_a": "AR",
+}
+
+
 def parse_csv(path, league, season):
     """Parse un CSV football-data en liste de dicts prêts pour db.upsert_match."""
     df = pd.read_csv(path, encoding="latin-1", on_bad_lines="skip")
@@ -154,7 +180,7 @@ def parse_csv(path, league, season):
         ftag = _num(row.get("FTAG"))
         hthg = _num(row.get("HTHG"))
         htag = _num(row.get("HTAG"))
-        rows.append({
+        parsed = {
             "date": date.strftime("%Y-%m-%d"),
             "league": league,
             "season": season,
@@ -173,5 +199,8 @@ def parse_csv(path, league, season):
             "ah_line": _pick_line(row, AH_LINE),
             "ah_home": ah_home,
             "ah_away": ah_away,
-        })
+        }
+        for dest, src in STAT_COLS.items():
+            parsed[dest] = _num(row.get(src))
+        rows.append(parsed)
     return rows

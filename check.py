@@ -57,12 +57,15 @@ def check(conn):
     else:
         print("aucun")
 
+    league_placeholders = ",".join("?" * len(footballdata.LEAGUES))
+
     print("\n=== Cotes de clôture 1N2 (critère ≥99%, saisons 2019-20+) ===")
     for r in conn.execute(
         "SELECT league, season, COUNT(*) n, "
         "SUM(odds_h IS NOT NULL) with_odds, "
         f"SUM(odds_source IN {CLOSING_SOURCES}) closing "
-        "FROM matches GROUP BY league, season ORDER BY league, season"):
+        f"FROM matches WHERE league IN ({league_placeholders}) "
+        "GROUP BY league, season ORDER BY league, season", footballdata.LEAGUES):
         pct_close = 100 * r["closing"] / r["n"] if r["n"] else 0
         pct_any = 100 * r["with_odds"] / r["n"] if r["n"] else 0
         if r["season"] < CLOSING_FROM_SEASON:
@@ -89,11 +92,12 @@ def check(conn):
             line += f"{100 * r[c] / r['n']:>10.1f}%"
         print(line)
 
-    print("\n=== xG (critère ≥95% des matchs joués) ===")
+    print("\n=== xG (critère ≥95% des matchs joués, ligues Understat uniquement) ===")
     missing_total = 0
     for r in conn.execute(
         "SELECT league, season, COUNT(*) n, SUM(xg_home IS NOT NULL) with_xg "
-        "FROM matches WHERE fthg IS NOT NULL GROUP BY league, season ORDER BY league, season"):
+        f"FROM matches WHERE fthg IS NOT NULL AND league IN ({league_placeholders}) "
+        "GROUP BY league, season ORDER BY league, season", footballdata.LEAGUES):
         pct = 100 * r["with_xg"] / r["n"] if r["n"] else 0
         status = "OK" if pct >= 95 else "ÉCART"
         if pct < 95 and r["season"] != current:
@@ -116,6 +120,25 @@ def check(conn):
             "SELECT date, league, home, away FROM matches "
             "WHERE fthg IS NOT NULL AND xg_home IS NULL ORDER BY date LIMIT 20"):
             print(f"  {r['date']} {r['league']} {r['home']} vs {r['away']}")
+
+    print("\n=== Ligues secondaires (roadmap A3 — informationnel, ne compte jamais dans le "
+          "verdict global : pas de comptage 'attendu' inventé par saison/ligue, et pas de "
+          "couverture xG possible, Understat ne couvre pas ces championnats) ===")
+    sec_placeholders = ",".join("?" * len(footballdata.SECONDARY_LEAGUES))
+    if footballdata.SECONDARY_LEAGUES:
+        sec_counts = conn.execute(
+            f"SELECT league, season, COUNT(*) n, SUM(fthg IS NOT NULL) played, "
+            f"SUM(odds_source IN {CLOSING_SOURCES}) closing "
+            f"FROM matches WHERE league IN ({sec_placeholders}) "
+            "GROUP BY league, season ORDER BY league, season", footballdata.SECONDARY_LEAGUES
+        ).fetchall()
+        if sec_counts:
+            print(f"{'ligue':<6}{'saison':<8}{'matchs':>7}{'joués':>7}{'clôture':>9}")
+            for r in sec_counts:
+                pct_close = 100 * r["closing"] / r["played"] if r["played"] else 0
+                print(f"{r['league']:<6}{r['season']:<8}{r['n']:>7}{r['played']:>7}{pct_close:>8.1f}%")
+        else:
+            print("aucune donnée en base — lancer python pipeline.py --secondary-only --update")
 
     # Passage de saison : avertissement seulement, jamais un échec. Hors-saison ou
     # avant publication de la source, l'absence est normale ; ce qui ne l'est pas,

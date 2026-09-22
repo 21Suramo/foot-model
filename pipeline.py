@@ -117,7 +117,13 @@ def update_league_season(conn, league, season, force=False):
     log.info("%s %s : %d lignes lues, %d insérées, %d mises à jour, %d ignorées, MAX(date)=%s",
               league, season, stats["read"], inserted, updated, ignored, max_date)
 
-    # 2. xG Understat
+    # 2. xG Understat — non disponible pour les ligues secondaires (roadmap A3,
+    # understat.LEAGUE_MAP ne couvre que les 5 grands championnats) : sauté
+    # explicitement, jamais une tentative silencieusement ratée.
+    if league not in understat.LEAGUE_MAP:
+        log.info("%s %s : xG Understat non applicable (ligue secondaire, hors couverture "
+                 "Understat) — sauté.", league, season)
+        return stats
     data = understat.fetch(league, season, footballdata.CURRENT_SEASON, force=force)
     if data is None:
         log.warning("%s %s : xG Understat indisponibles", league, season)
@@ -135,7 +141,9 @@ def update_league_season(conn, league, season, force=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--update", action="store_true", help="télécharge et met à jour la base")
-    parser.add_argument("--league", choices=footballdata.LEAGUES, help="restreindre à une ligue")
+    parser.add_argument("--league", choices=footballdata.ALL_LEAGUES, help="restreindre à une ligue")
+    parser.add_argument("--secondary-only", action="store_true",
+                        help="ne traiter que les ligues secondaires (roadmap A3)")
     parser.add_argument("--season", choices=footballdata.SEASONS, help="restreindre à une saison (ex: 2324)")
     parser.add_argument("--force", action="store_true", help="ignorer le cache et re-télécharger")
     parser.add_argument("--db", default=str(db.DB_PATH), help="chemin de la base SQLite")
@@ -148,7 +156,12 @@ def main(argv=None):
         parser.print_help()
         return 1
 
-    leagues = [args.league] if args.league else footballdata.LEAGUES
+    if args.league:
+        leagues = [args.league]
+    elif args.secondary_only:
+        leagues = footballdata.SECONDARY_LEAGUES
+    else:
+        leagues = footballdata.LEAGUES
     seasons = [args.season] if args.season else footballdata.SEASONS
 
     conn = db.connect(args.db)

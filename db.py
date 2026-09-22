@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS matches (
     ah_away     REAL,
     xg_home     REAL,
     xg_away     REAL,
+    shots_h     REAL,
+    shots_a     REAL,
+    sot_h       REAL,
+    sot_a       REAL,
+    corners_h   REAL,
+    corners_a   REAL,
+    fouls_h     REAL,
+    fouls_a     REAL,
+    yellow_h    REAL,
+    yellow_a    REAL,
+    red_h       REAL,
+    red_a       REAL,
     UNIQUE (date, home, away)
 );
 
@@ -118,7 +130,29 @@ MATCH_COLS = [
     "fthg", "ftag", "hthg", "htag",
     "odds_h", "odds_d", "odds_a", "odds_source",
     "ou25_over", "ou25_under", "ah_line", "ah_home", "ah_away",
+    "shots_h", "shots_a", "sot_h", "sot_a", "corners_h", "corners_a",
+    "fouls_h", "fouls_a", "yellow_h", "yellow_a", "red_h", "red_a",
 ]
+
+# Colonnes de stats avancées (roadmap B1-B4/features) ajoutées après la
+# création initiale de matches : sur une base existante, CREATE TABLE IF NOT
+# EXISTS ne les ajoute pas — migration explicite via ALTER TABLE ADD COLUMN,
+# idempotente (vérifie PRAGMA table_info avant d'ajouter). Ne touche jamais
+# une colonne déjà présente ; ne supprime rien.
+_NEW_MATCH_COLUMNS = [
+    "shots_h REAL", "shots_a REAL", "sot_h REAL", "sot_a REAL",
+    "corners_h REAL", "corners_a REAL", "fouls_h REAL", "fouls_a REAL",
+    "yellow_h REAL", "yellow_a REAL", "red_h REAL", "red_a REAL",
+]
+
+
+def _migrate(conn):
+    existing = {r["name"] for r in conn.execute("PRAGMA table_info(matches)")}
+    for coldef in _NEW_MATCH_COLUMNS:
+        name = coldef.split()[0]
+        if name not in existing:
+            conn.execute(f"ALTER TABLE matches ADD COLUMN {coldef}")
+    conn.commit()
 
 
 def connect(db_path=DB_PATH):
@@ -127,6 +161,7 @@ def connect(db_path=DB_PATH):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 

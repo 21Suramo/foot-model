@@ -5,16 +5,23 @@ de clôture, xG) destiné à alimenter un backtest walk-forward Dixon-Coles.
 
 ## Synthèse honnête (à lire avant tout le reste)
 
-**À ce jour (2026-09-10), aucun chantier testé n'a produit d'edge mesurable
+**À ce jour (2026-09-22), aucun chantier testé n'a produit d'edge mesurable
 contre le marché de clôture sharp.** M3, M3.5, M5/M5.1-3, M6, M7, M9, A1
-(marchés dérivés) et le diagnostic fatigue/M8 sont tous des verdicts
-honnêtes — mais aucun ne bat nettement et durablement le marché. Le
-meilleur résultat reste M3.5 : Brier à **+1,78 % du marché**, IC 95 %
-[+1,24 ; +2,34 %] — un modèle qui approche le marché sans le battre. C1
-(mouvement de cote comme signal d'entrée), investigué en entier avec un
-protocole complet (tune/test/shuffle), a un verdict final NÉGATIF. Cette
-phrase est la seule chose qu'un lecteur pressé doit retenir de ce fichier ;
-le reste ci-dessous est le détail qui justifie chaque verdict individuel.
+(marchés dérivés), le diagnostic fatigue/M8, C1 (mouvement de cote) et
+maintenant le GBM (roadmap B1-B4, voir section dédiée plus bas) sont tous
+des verdicts honnêtes — mais aucun ne bat nettement et durablement le
+marché. Le meilleur résultat reste M3.5 : Brier à **+1,78 % du marché**, IC
+95 % [+1,24 ; +2,34 %] — un modèle qui approche le marché sans le battre.
+Le GBM (2026-09-22, [reports/ml_backtest.md](reports/ml_backtest.md)) fait
+globalement **jeu égal avec M3.5** sur les 3 grandes ligues (Δ +0,46 %,
+IC [-0,14 ; +1,06 %] — n'exclut pas 0, donc pas distinguable) et reste,
+comme tout le reste, **derrière le marché** (Δ agrégat +2,07 % IC [+1,68 ;
++2,45 %]) — pas un pas en avant mesuré, une confirmation de plus que le
+marché est dur à battre avec ces données. C1 (mouvement de cote comme
+signal d'entrée), investigué en entier avec un protocole complet
+(tune/test/shuffle), a un verdict final NÉGATIF. Cette phrase est la seule
+chose qu'un lecteur pressé doit retenir de ce fichier ; le reste ci-dessous
+est le détail qui justifie chaque verdict individuel.
 
 ## Critères d'arrêt
 
@@ -662,12 +669,134 @@ un ajustement manuel en pipeline automatisé non demandé.
     n'est pas interdit, mais ce n'est pas non plus une décision que ce
     fichier peut prendre à la place de l'utilisateur.
 
+## Override du 2026-09-22 — B1-B4 (GBM), A2 complété (line shopping), A3 (ligues secondaires)
+
+⚠ **Ce chantier a été codé sur DEMANDE EXPLICITE de l'utilisateur, en
+franchissant délibérément des portes que ce fichier documentait jusque-là
+comme fermées** (Niveau 3/B1-B4 « bloqué sur une décision utilisateur »,
+A3 « faisable mais lourd, non lancé », A2 « démarré, pas terminé »). Cette
+section documente ce qui a réellement été construit et son verdict honnête
+— elle ne prétend PAS que les raisons données plus haut pour ne pas encore
+attaquer B1-B4/A3 (edge non démontré, coût de plusieurs mois/semaines)
+soient devenues fausses : l'utilisateur a choisi d'avancer quand même,
+en amortissant ce coût en une session plutôt qu'en plusieurs mois, avec
+l'attente explicite que le résultat soit publié tel quel — bon ou
+mauvais — plutôt qu'enjolivé. Lire cette section AVANT de supposer que le
+GBM ou les ligues secondaires ont le même statut de validation que M3.5.
+
+- **A3 — ligues secondaires : ingestion étendue et opérationnelle.**
+  `footballdata.SECONDARY_LEAGUES = ["E1", "SP2", "I2", "N1"]`
+  (Championship, Segunda División, Serie B, Eredivisie) + `ALL_LEAGUES =
+  LEAGUES + SECONDARY_LEAGUES`. `pipeline.py --update --secondary-only`
+  (ou `--league E1` etc.) les ingère depuis football-data.co.uk, mêmes 9
+  saisons que les 3 ligues historiques — vérifié par appel réel, colonnes
+  identiques (résultats, cotes 1N2/O-U/handicap, **et** tirs/tirs cadrés/
+  corners/fautes/cartons, nouvelles colonnes `matches.shots_h/a`,
+  `sot_h/a`, `corners_h/a`, `fouls_h/a`, `yellow_h/a`, `red_h/a` —
+  migration `db._migrate` idempotente sur une base existante). **Aucune xG
+  Understat sur ces 4 ligues** (`understat.LEAGUE_MAP` ne couvre que les 5
+  grands championnats) : `pipeline.py` saute explicitement l'étape xG pour
+  elles (log, pas un échec silencieux) — le GBM s'appuie pour elles sur
+  buts/tirs réels, jamais une xG simulée. `check.py` garde `LEAGUES`
+  (3 ligues) comme périmètre du verdict global (`ok`) ; les ligues
+  secondaires ont leur propre section informationnelle (comptages/clôture
+  Pinnacle), jamais de critère "xG ≥ 95 %" inventé pour elles. `backtest.py`
+  /`backtest35.py`/M3.5 restent sur `LEAGUES` **sans aucune modification** —
+  aucun résultat déjà publié n'a bougé.
+- **A2 — line shopping : implémenté (`line_shopping.py`), toujours pas la
+  même chose que l'A2 "terminé".** Lit `book_odds` (capturé par
+  `odds_snapshot.py`, roadmap A2 déjà en place) et retourne la cote
+  MAXIMALE tous books confondus par issue 1N2 et par ligne O/U
+  (`best_odds_1x2`/`best_odds_totals`/`summarize`), avec le book
+  correspondant. Purement informationnel : `predict.py match` l'affiche
+  toujours (section « Line shopping », silencieuse si `book_odds` n'a rien
+  pour l'affiche) et le journalise dans `meta.line_shopping` — **ne
+  remplace jamais `--odds`** (source de vérité du blend marché/modèle et du
+  staking Kelly) et ne déclenche aucune mise. Le constat déjà documenté
+  plus haut (cadence 2/jour, CLV provisoire non-informatif tant qu'il n'y a
+  pas plusieurs semaines de snapshots indépendants) reste entièrement
+  valable : line shopping donne la MEILLEURE cote VUE dans les snapshots
+  déjà capturés, pas une cote en temps réel ni un pricing validé.
+- **B1-B4 — modèle Gradient Boosting (LightGBM), stacké sur Dixon-Coles :
+  implémenté, backtesté, verdict NÉGATIF (pas d'edge, pas de gain sur
+  M3.5).** Architecture :
+  - `features/` (nouveau package) — Elo global inter-ligues (`elo.py`,
+    K=20, avantage domicile +60, ratings persistants à travers une montée/
+    descente puisqu'il n'y a pas de pool par ligue), pi-ratings simplifiés
+    (`pi_rating.py`, constantes non réglées sur ce dataset, assumé comme
+    tel), moyennes glissantes 3/5/10 matchs domicile/extérieur/diff
+    (`form.py` : buts, xG, tirs, tirs cadrés, corners — **jamais la
+    possession, absente de football-data.co.uk**), jours de repos
+    (`rest.py`, même limite déjà documentée pour M8 : aucune donnée de
+    coupe/Europe). `build.py` fait la garde anti-fuite en UNE passe
+    chronologique (features lues AVANT la mise à jour de l'état avec le
+    résultat du match) — testé explicitement
+    (`tests/test_features.py::TestBuildNoLeakage`).
+  - `ml_model.py` — classifieur LightGBM multiclasse (1N2) + deux
+    régresseurs Poisson (buts attendus dom/ext), features catégorielles
+    natives (`league`). Stacking : les probas Dixon-Coles GOALS-ONLY
+    walk-forward (même ξ figé M3, jamais retouché) sont calculées pour
+    chaque ligue et injectées comme features d'entrée
+    (`backtest_ml.dc_stacking_map`) — Dixon-Coles n'est jamais remplacé ni
+    retouché, seulement réutilisé comme générateur de features.
+  - `backtest_ml.py` — même discipline que M3.5 (tune sur validation
+    2021+2122 seule, run une fois sur test 2223→2526, shuffle-test
+    anti-fuite), avec deux différences ASSUMÉES et documentées dans le
+    module (pas des oublis) : refit par FRONTIÈRE DE SAISON plutôt
+    qu'hebdomadaire (un GBM coûte bien plus cher à ré-entraîner qu'un
+    L-BFGS-B Dixon-Coles), et portée `ALL_LEAGUES` (7 ligues, un seul
+    modèle poolé, `league` en feature) plutôt que `LEAGUES` seul. Résultat
+    figé dans `data/ml_frozen.json` (num_leaves=7, learning_rate=0.08,
+    num_rounds=80 — **PAS versionné**, comme `data/xi_frozen.json` : se
+    régénère à l'identique via `--tune`).
+  - `report_ml.py` → [reports/ml_backtest.md](reports/ml_backtest.md),
+    IC bootstrap appariés (même `bootstrap.py` que M3.5), Brier/log-loss/
+    accuracy/AUC **par ligue** (jamais un agrégat qui masquerait une ligue
+    secondaire à la traîne), comparaison directe à M3.5 sur les 3 grandes
+    ligues.
+  - **Résultat honnête (11 138 prédictions de test, 7 ligues) :**
+    - vs marché (démargé power) : **+2,07 % IC [+1,68 ; +2,45 %]** — pire
+      que le marché, IC exclut 0 (distinguable du bruit, dans le mauvais
+      sens). Par ligue : de +1,46 % (SP1) à +3,33 % (E0) sur les 3 grandes
+      ligues, +1,61 % à +2,44 % sur les 4 secondaires — nulle part un edge.
+    - **vs M3.5 (3 grandes ligues, 4 338 matchs communs) : +0,46 % IC
+      [-0,14 ; +1,06 %] — IC N'EXCLUT PAS 0.** Le GBM ne bat PAS M3.5 de
+      façon distinguable du bruit ; au mieux une parité statistique, jamais
+      une amélioration mesurée.
+    - Anti-fuite : shuffle-test dégradé comme attendu (Brier réel 0,611 →
+      permuté 0,653) — pas de fuite détectée dans le pipeline de features.
+    - Ligues secondaires : AUC macro 0,58-0,59 (vs 0,65-0,69 sur les 3
+      grandes ligues) — nettement moins prédictibles avec les features
+      actuelles (pas de xG, historique de features plus court côté forme).
+  - **Conséquence pour la production : AUCUNE.** `predict.py` garde son
+    staking Kelly 1N2 intégralement sur M3.5. Le GBM n'est exposé que par
+    `predict.py match --ml-compare` (ré-entraîne le modèle sur la ligue du
+    match à chaque appel — coûteux, quelques secondes à dizaines de
+    secondes, jamais appelé par défaut), journalisé dans
+    `meta.ml_prediction`, affiché à côté de M3.5 pour comparaison —
+    jamais utilisé pour `final`/`bets`/les mises. `train.py` expose
+    `fit_production_model()` (même principe que Dixon-Coles dans
+    `predict.py` : pas d'artefact binaire versionné, le modèle se
+    RÉ-ENTRAÎNE à chaque usage depuis les hyperparamètres figés + les
+    données courantes ; un cache local optionnel `--cache DIR` existe pour
+    un usage batch, jamais committé).
+  - **Ce chantier ne rouvre PAS le critère d'arrêt n°2** (revue critique du
+    projet entier à 2027-09-10) : c'est une piste de plus explorée
+    honnêtement avec un verdict négatif, exactement le genre de résultat
+    que ce fichier est censé documenter sans reformuler en succès.
+
+Résumé une phrase : **B1-B4/A2/A3 sont maintenant du code réel, testé,
+avec des vrais résultats sur les vraies données du dépôt — et ces
+résultats disent la même chose que tout le reste du fichier : pas d'edge
+mesuré, ni sur les ligues secondaires ni avec le Gradient Boosting.**
+
 ## Commandes
 
 ```bash
-pip install -r requirements.txt      # dépendances (scipy requis par model.py)
+pip install -r requirements.txt      # dépendances (scipy requis par model.py, lightgbm par ml_model.py)
 python pipeline.py --update          # tout mettre à jour (3 ligues x 9 saisons)
 python pipeline.py --update --league E0 --season 2324   # une ligue/saison
+python pipeline.py --update --secondary-only  # roadmap A3 : Championship/Segunda/Serie B/Eredivisie (pas dans --update par défaut)
 python check.py                      # validation (code retour 0 si tout passe)
 python backtest.py --tune|--run|--shuffle-test   # backtest M3 (voir backtest.py)
 python report.py                     # rapport -> reports/m3_backtest.md
@@ -687,6 +816,10 @@ python backtest_derived.py --tune|--run|--shuffle-test  # roadmap A1 : validatio
 python report_derived.py             # rapport -> reports/derived_markets_backtest.md
 python coupon.py                     # coupon du week-end filtré (B3 + Niveau 2 contexte) depuis le journal, source unique
 python real_pnl.py                   # P&L réel 1xbet depuis data/real_bets.json -> reports/real_pnl.md
+python backtest_ml.py --tune|--run|--shuffle-test  # roadmap B1-B4 : GBM stacké sur Dixon-Coles (réponse : pas d'edge, cf. reports/ml_backtest.md)
+python report_ml.py                  # rapport -> reports/ml_backtest.md
+python train.py [--league E0] [--cache DIR]  # entraîne le GBM de production (hyperparamètres figés, jamais d'artefact versionné)
+python predict.py match ... --ml-compare  # affiche la comparaison GBM à côté de M3.5 (informationnel, ne change rien au staking)
 python -m unittest discover -s tests # tests unitaires
 ```
 
@@ -988,6 +1121,82 @@ python -m unittest discover -s tests # tests unitaires
   requests 2.33.1), confirmé à la fois par le run CI réel sur `main` et par
   une reproduction locale — pas de divergence CI/prod à corriger ici, malgré
   un audit antérieur qui en signalait une.
+- `features/` — roadmap B1-B4 (2026-09-22). `elo.py` (Elo global inter-
+  ligues, K=20, avantage domicile +60), `pi_rating.py` (pi-ratings
+  simplifiés, constantes non réglées sur ce dataset — assumé, pas mesuré),
+  `form.py` (moyennes glissantes 3/5/10 domicile/extérieur/diff : buts, xG,
+  tirs, tirs cadrés, corners — jamais la possession, absente de
+  football-data.co.uk), `rest.py` (jours de repos, même limite que M8 :
+  aucune donnée de coupe/Europe). `build.py` fait la garde anti-fuite en
+  UNE passe chronologique sur toutes les ligues (`build_feature_table`,
+  features lues avant la mise à jour de l'état) et expose `state_asof`/
+  `features_for_fixture` pour la prédiction d'un match pas encore joué
+  (utilisé par `predict.py --ml-compare`). Aucune dépendance sur
+  Dixon-Coles/le fit M3.5 — pur calcul de features à partir de `matches`.
+- `ml_model.py` — roadmap B1-B4 : `GBMModel` (LightGBM), classifieur 1N2
+  multiclasse + deux régresseurs Poisson (buts attendus dom/ext), `league`
+  en feature catégorielle native. `fit()`/`GBMModel.save/load`. Dépend de
+  `lightgbm` (requirements.txt, ajouté le 2026-09-22).
+- `backtest_ml.py` — roadmap B1-B4 : walk-forward « purgé » (refit par
+  frontière de saison, pas hebdomadaire — coût GBM assumé, documenté en
+  tête de fichier), portée `footballdata.ALL_LEAGUES` (un seul modèle
+  poolé). `dc_stacking_map` réutilise `backtest.walk_forward` (Dixon-Coles
+  goals-only, ξ figé M3, jamais retouché) comme générateur de features
+  d'entrée du GBM (stacking) — pas une nouvelle publication du backtest M3.
+  `--tune`/`--run`/`--shuffle-test` même discipline que M3.5, figé dans
+  `data/ml_frozen.json` (**non versionné**, comme `xi_frozen.json` — se
+  régénère à l'identique). Écrit dans `predictions_ml` (`db.py`).
+- `report_ml.py` — Brier/log-loss/accuracy/AUC (calcul par rang, sans
+  scikit-learn) vs Dixon-Coles/M3.5/marché, IC bootstrap appariés, PAR
+  LIGUE (jamais un agrégat qui masquerait une ligue secondaire à la
+  traîne) → [reports/ml_backtest.md](reports/ml_backtest.md). Verdict
+  actuel : pas d'edge vs marché, parité statistique avec M3.5 (IC
+  n'exclut pas 0) — cf. section « Override du 2026-09-22 » plus haut.
+- `train.py` — entraîne le GBM de production avec les hyperparamètres
+  figés par `backtest_ml.py --tune` (échoue explicitement si absent, comme
+  `backtest35.frozen()`). Comme Dixon-Coles dans `predict.py`, le modèle
+  n'est PAS un artefact binaire versionné : `fit_production_model()`
+  ré-entraîne à chaque usage depuis les données courantes ; `--cache DIR`
+  est un cache local optionnel, jamais committé (même statut que
+  `data/raw/`).
+- `line_shopping.py` — roadmap A2, complète (pas remplace)
+  `odds_snapshot.py`/`oddsapi.py` : lit `book_odds` et retourne la cote
+  MAXIMALE tous books confondus par issue 1N2 (`best_odds_1x2`) et par
+  ligne O/U (`best_odds_totals`). Purement informationnel dans `predict.py`
+  (section affichée + `meta.line_shopping`) — ne remplace jamais `--odds`
+  ni le staking Kelly ; {} si `book_odds` n'a rien capturé pour l'affiche.
+- `predict.py` — `--ml-compare` (roadmap B1-B4) : ré-entraîne le GBM sur la
+  ligue du match (via `train.fit_production_model`, coûteux — quelques
+  secondes à dizaines de secondes, jamais par défaut) et affiche ses
+  probas 1N2 à côté de M3.5, journalisé dans `meta.ml_prediction` —
+  informationnel seulement, `final`/`bets`/le staking Kelly restent
+  intégralement M3.5. La feature `dc_prob_*` utilisée par le GBM à
+  l'inférence reproduit exactement la recette de `backtest_ml.py` (fit
+  Dixon-Coles goals-only séparé, pas le fit M3.5 xG-blended déjà utilisé
+  pour la prédiction de production) pour éviter tout décalage
+  entraînement/inférence sur cette feature.
+- `db.py` — migration `_migrate()` (roadmap B1-B4/A3, 2026-09-22) : ajoute
+  par `ALTER TABLE` les colonnes `shots_h/a`, `sot_h/a`, `corners_h/a`,
+  `fouls_h/a`, `yellow_h/a`, `red_h/a` à `matches` sur une base existante
+  (idempotent, vérifie `PRAGMA table_info` avant d'ajouter) — nécessaire
+  car `CREATE TABLE IF NOT EXISTS` n'ajoute pas de colonne à une table déjà
+  créée. `predictions_ml` (roadmap B1-B4) créée par `backtest_ml.py`.
+- `footballdata.py` — `SECONDARY_LEAGUES`/`ALL_LEAGUES` (roadmap A3,
+  2026-09-22) : `LEAGUES` (3 ligues, M3.5) reste inchangé, jamais fusionné.
+  `STAT_COLS` (tirs/cadrés/corners/fautes/cartons) parsé pour toutes les
+  ligues (top et secondaires) depuis les mêmes colonnes football-data.co.uk
+  (`HS`/`AS`/`HST`/... — pas de possession, jamais publiée par la source).
+- `pipeline.py` — `--secondary-only` (roadmap A3) : ingère
+  `SECONDARY_LEAGUES` sans toucher au comportement par défaut de
+  `--update` (reste `LEAGUES` seul, comme avant ce chantier — la cadence/
+  le coût de l'automatisation existante, `weekly.yml`, n'a pas changé).
+  Saute explicitement l'étape xG Understat pour une ligue hors de
+  `understat.LEAGUE_MAP` (log, jamais une tentative silencieusement ratée).
+- `check.py` — section informationnelle séparée pour `SECONDARY_LEAGUES`
+  (comptages, couverture cotes de clôture) : jamais de critère "attendu"
+  inventé par saison, jamais de critère xG (structurellement inapplicable),
+  et n'affecte jamais le verdict global (`ok`), qui reste scopé à `LEAGUES`
+  exactement comme avant ce chantier.
 - `.github/workflows/weekly.yml` — automatise la partie « lundi suivant »
   de la routine de suivi ci-dessous : `pipeline.py --update` puis
   `predict.py sync-results` puis `predict.py report`, commit+push de
@@ -1015,7 +1224,11 @@ python -m unittest discover -s tests # tests unitaires
   branche de travail ne se déclenchera pas tout seul tant qu'il n'est pas
   mergé.
 
-Périmètre : E0 (Premier League), SP1 (Liga), F1 (Ligue 1), 2018-19 à 2026-27.
+Périmètre (production/staking Kelly M3.5) : E0 (Premier League), SP1 (Liga),
+F1 (Ligue 1), 2018-19 à 2026-27. Roadmap A3 (2026-09-22, ingestion + GBM
+seulement, jamais le staking) : + E1 (Championship), SP2 (Segunda División),
+I2 (Serie B), N1 (Eredivisie) — mêmes saisons, sans xG (Understat ne les
+couvre pas).
 
 **Passage de saison** : `SEASONS` et `CURRENT_SEASON` (footballdata.py) sont des
 constantes à rallonger chaque été. L'oubli est silencieux — la saison en cours
