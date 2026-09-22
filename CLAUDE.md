@@ -266,6 +266,37 @@ suivante sera la bonne :
   elle aurait figé du bruit. Ne pas relancer ce chantier sans donnée
   nouvelle (davantage de saisons) ; ne pas le confondre avec un simple oubli
   à rattraper.
+- **Kelly ajusté à l'incertitude du modèle (désaccord M3.5/GBM) : investigué,
+  PAS construit (2026-09-22).** Idée soulevée par l'utilisateur : moduler la
+  mise Kelly selon que M3.5 (production) et le GBM (roadmap B1-B4) sont
+  d'accord ou non sur un match — l'intuition étant qu'un désaccord entre deux
+  modèles indépendants trahit une prédiction moins fiable, donc une mise à
+  réduire. Même discipline que fatigue/M8 et C1 : vérifier le signal avant de
+  coder quoi que ce soit dans le staking réel (verrouillé par
+  `tests/test_predict.py::TestRiskParameters`).
+  `kelly_uncertainty_check.py` compare, sur les 4338 matchs communs au TEST
+  de M3.5 et du GBM (3 grandes ligues), le Brier de M3.5 et le ROI théorique
+  du meilleur pari M3.5 (edge > 3 % vs marché démargé, proxy faute de cotes
+  réellement cotées pour ce jeu rétroactif) par tranche de désaccord
+  (distance en variation totale entre les deux modèles). **Résultat en deux
+  temps** (voir [reports/kelly_uncertainty_check.md](reports/kelly_uncertainty_check.md)) :
+  le désaccord prédit bien un Brier M3.5 plus mauvais en général (écart
+  +0,045 pt, IC [+0,03 ; +0,06] excluant 0) — donc ce n'est pas du bruit —
+  **mais ce signal ne survit PAS au passage à la métrique qui compte pour
+  Kelly** : le ROI théorique des paris à edge réel ne montre aucun écart
+  significatif entre désaccord faible et fort (IC [-0,08 ; +0,15] contenant
+  0), et le point va même dans le sens inverse de l'hypothèse. Même pattern
+  que C1 (`clv_signal_check.py`) : un signal large qui ne survit pas au
+  passage à la métrique réellement actionnable. **Verdict : la calibration
+  N'EST PAS construite** — un facteur de réduction Kelly basé sur ce
+  désaccord capturerait un signal réel mais mal ciblé (qualité générale de
+  prédiction) en le faisant passer pour un signal de staking, ce qui n'est
+  pas démontré. Limite méthodologique assumée dans le script : ce jeu de
+  4338 matchs est déjà le TEST des deux modèles — aucune donnée hors-test
+  disponible pour ce diagnostic (le GBM n'a jamais été évalué sur
+  VALIDATION seule) ; une éventuelle future calibration devra se faire sur
+  une donnée fraîche (production à venir), jamais sur ces mêmes matchs.
+  Chantier fermé proprement, rien construit en production.
 
 ## Roadmap post-M7 (revue du 2026-09-10)
 
@@ -844,6 +875,7 @@ python pipeline.py --update && python predict.py sync-results  # résultats rée
 python predict.py report             # rapport de calibration -> reports/production_calibration.md
 python backtest_blend.py             # backtest du blend marché/modèle -> reports/m5_blend_backtest.md
 python fatigue_signal_check.py       # le signal fatigue existe-t-il ? -> reports/fatigue_signal_check.md (réponse : non)
+python kelly_uncertainty_check.py    # le désaccord M3.5/GBM prédit-il un edge qui tourne mal ? -> reports/kelly_uncertainty_check.md (réponse : non, pas pour le staking)
 python clv_signal_check.py [--tune|--run|--shuffle-test]  # roadmap C1 : score composite mouvement de cote (réponse finale : non, cf. reports/clv_signal_check.md)
 ODDS_API_KEY=... python odds_snapshot.py [--markets h2h,totals] [--regions eu,uk]  # roadmap A2 : snapshot multi-books -> table book_odds
 python devig_check.py                # proportionnel vs power vs Shin -> reports/devig_check.md (hors test)
