@@ -3528,8 +3528,8 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Brentford",
@@ -3579,6 +3579,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.53,
+      "draw": 3.63,
+      "away": 2.58,
+      "source": "avg_close"
     }
   },
   {
@@ -3600,11 +3606,14 @@
       {
         "issue": "away",
         "odds": 3.6,
-        "stake_pct": 0.000824
+        "stake_pct": 0.000824,
+        "realized_pct": 0.002142,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.04
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-3",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "home": "Tottenham",
@@ -3654,6 +3663,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.89,
+      "draw": 3.77,
+      "away": 3.81,
+      "source": "avg_close"
     }
   },
   {
@@ -3672,8 +3687,8 @@
     },
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-0",
+    "actual_ht": "2-0",
     "meta": {
       "model": "M5",
       "home": "Brighton",
@@ -3723,6 +3738,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 4.92,
+      "draw": 3.84,
+      "away": 1.68,
+      "source": "avg_close"
     }
   },
   {
@@ -3741,8 +3762,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "2-0",
     "meta": {
       "model": "M5",
       "home": "Newcastle",
@@ -3792,6 +3813,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.59,
+      "draw": 4.29,
+      "away": 5.05,
+      "source": "avg_close"
     }
   },
   {
@@ -3813,11 +3840,14 @@
       {
         "issue": "home",
         "odds": 1.82,
-        "stake_pct": 0.008413
+        "stake_pct": 0.008413,
+        "realized_pct": 0.006899,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.005464
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Everton",
@@ -3867,6 +3897,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.74,
+      "draw": 3.85,
+      "away": 4.43,
+      "source": "avg_close"
     }
   },
   {
@@ -3885,8 +3921,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Nott'm Forest",
@@ -3936,6 +3972,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.63,
+      "draw": 3.93,
+      "away": 5.21,
+      "source": "avg_close"
     }
   },
   {
@@ -3957,11 +3999,14 @@
       {
         "issue": "home",
         "odds": 3.1,
-        "stake_pct": 0.006373
+        "stake_pct": 0.006373,
+        "realized_pct": -0.006373,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": 0.003236
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Bournemouth",
@@ -4011,6 +4056,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 3.11,
+      "draw": 3.66,
+      "away": 2.15,
+      "source": "avg_close"
     }
   },
   {
@@ -4029,8 +4080,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Leeds",
@@ -4080,6 +4131,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.66,
+      "draw": 3.95,
+      "away": 4.93,
+      "source": "avg_close"
     }
   },
   {
@@ -4098,8 +4155,8 @@
     },
     "predicted_score": "2-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "5-3",
+    "actual_ht": "3-2",
     "meta": {
       "model": "M5",
       "home": "Man City",
@@ -4149,6 +4206,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.34,
+      "draw": 5.19,
+      "away": 8.5,
+      "source": "avg_close"
     }
   },
   {
@@ -4167,8 +4230,8 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Fulham",
@@ -4218,6 +4281,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 3.49,
+      "draw": 3.74,
+      "away": 1.98,
+      "source": "avg_close"
     }
   },
   {
@@ -4236,8 +4305,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-3",
+    "actual_ht": "0-2",
     "meta": {
       "model": "M5",
       "home": "Espanol",
@@ -4287,6 +4356,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.76,
+      "draw": 3.69,
+      "away": 4.48,
+      "source": "avg_close"
     }
   },
   {
@@ -4305,8 +4380,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Osasuna",
@@ -4356,6 +4431,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.64,
+      "draw": 3.19,
+      "away": 2.71,
+      "source": "avg_close"
     }
   },
   {
@@ -4374,8 +4455,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "0-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Ath Bilbao",
@@ -4425,6 +4506,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.6,
+      "draw": 3.8,
+      "away": 5.82,
+      "source": "avg_close"
     }
   },
   {
@@ -4443,8 +4530,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "5-0",
+    "actual_ht": "2-0",
     "meta": {
       "model": "M5",
       "home": "Celta",
@@ -4494,6 +4581,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.79,
+      "draw": 3.76,
+      "away": 4.19,
+      "source": "avg_close"
     }
   },
   {
@@ -4515,16 +4608,22 @@
       {
         "issue": "home",
         "odds": 10.0,
-        "stake_pct": 0.005863
+        "stake_pct": 0.005863,
+        "realized_pct": -0.005863,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.224205
       },
       {
         "issue": "draw",
         "odds": 6.8,
-        "stake_pct": 0.001755
+        "stake_pct": 0.001755,
+        "realized_pct": -0.001755,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.032717
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-3",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "home": "Sevilla",
@@ -4574,6 +4673,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 8.42,
+      "draw": 6.33,
+      "away": 1.28,
+      "source": "avg_close"
     }
   },
   {
@@ -4592,8 +4697,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-0",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Getafe",
@@ -4643,6 +4748,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.9,
+      "draw": 3.26,
+      "away": 4.42,
+      "source": "avg_close"
     }
   },
   {
@@ -4664,11 +4775,14 @@
       {
         "issue": "home",
         "odds": 3.43,
-        "stake_pct": 0.002326
+        "stake_pct": 0.002326,
+        "realized_pct": 0.005652,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.039216
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Ath Madrid",
@@ -4718,6 +4832,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 3.44,
+      "draw": 3.8,
+      "away": 1.97,
+      "source": "avg_close"
     }
   },
   {
@@ -4736,8 +4856,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-1",
+    "actual_ht": "1-1",
     "meta": {
       "model": "M5",
       "home": "Villarreal",
@@ -4787,6 +4907,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.54,
+      "draw": 4.44,
+      "away": 5.4,
+      "source": "avg_close"
     }
   },
   {
@@ -4808,11 +4934,14 @@
       {
         "issue": "home",
         "odds": 3.1,
-        "stake_pct": 0.006357
+        "stake_pct": 0.006357,
+        "realized_pct": -0.006357,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.157609
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-1",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "home": "La Coruna",
@@ -4862,6 +4991,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 3.72,
+      "draw": 3.65,
+      "away": 1.93,
+      "source": "avg_close"
     }
   },
   {
@@ -4883,11 +5018,14 @@
       {
         "issue": "home",
         "odds": 2.7,
-        "stake_pct": 0.004966
+        "stake_pct": 0.004966,
+        "realized_pct": -0.004966,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.055944
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-3",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "home": "Valencia",
@@ -4937,6 +5075,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.86,
+      "draw": 3.33,
+      "away": 2.43,
+      "source": "avg_close"
     }
   },
   {
@@ -4955,8 +5099,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Monaco",
@@ -5006,6 +5150,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.81,
+      "draw": 3.92,
+      "away": 3.95,
+      "source": "avg_close"
     }
   },
   {
@@ -5024,8 +5174,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Paris FC",
@@ -5075,6 +5225,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.79,
+      "draw": 3.88,
+      "away": 4.07,
+      "source": "avg_close"
     }
   },
   {
@@ -5093,8 +5249,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "4-0",
+    "actual_ht": "2-0",
     "meta": {
       "model": "M5",
       "home": "Lyon",
@@ -5144,6 +5300,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.09,
+      "draw": 3.75,
+      "away": 3.16,
+      "source": "avg_close"
     }
   },
   {
@@ -5162,8 +5324,8 @@
     },
     "predicted_score": "1-0",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "3-2",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Toulouse",
@@ -5213,6 +5375,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 1.65,
+      "draw": 4.05,
+      "away": 4.81,
+      "source": "avg_close"
     }
   },
   {
@@ -5231,8 +5399,8 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Le Mans",
@@ -5282,6 +5450,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.87,
+      "draw": 3.2,
+      "away": 2.5,
+      "source": "avg_close"
     }
   },
   {
@@ -5300,8 +5474,8 @@
     },
     "predicted_score": "2-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-0",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Angers",
@@ -5351,6 +5525,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.04,
+      "draw": 3.47,
+      "away": 3.53,
+      "source": "avg_close"
     }
   },
   {
@@ -5369,8 +5549,8 @@
     },
     "predicted_score": "1-2",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "0-1",
     "meta": {
       "model": "M5",
       "home": "Auxerre",
@@ -5420,6 +5600,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 2.9,
+      "draw": 3.51,
+      "away": 2.31,
+      "source": "avg_close"
     }
   },
   {
@@ -5438,8 +5624,8 @@
     },
     "predicted_score": "0-1",
     "bets": [],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "2-1",
+    "actual_ht": "1-0",
     "meta": {
       "model": "M5",
       "home": "Nice",
@@ -5489,6 +5675,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 3.14,
+      "draw": 3.52,
+      "away": 2.18,
+      "source": "avg_close"
     }
   },
   {
@@ -5510,11 +5702,14 @@
       {
         "issue": "home",
         "odds": 5.86,
-        "stake_pct": 0.009865
+        "stake_pct": 0.009865,
+        "realized_pct": -0.009865,
+        "clv_skipped": "source_not_sharp",
+        "clv_pct_provisional": -0.077165
       }
     ],
-    "actual_score": null,
-    "actual_ht": null,
+    "actual_score": "1-2",
+    "actual_ht": "0-0",
     "meta": {
       "model": "M5",
       "home": "Marseille",
@@ -5564,6 +5759,12 @@
           "calibrated": false
         }
       }
+    },
+    "closing_odds": {
+      "home": 6.54,
+      "draw": 5.08,
+      "away": 1.4,
+      "source": "avg_close"
     }
   }
 ]
